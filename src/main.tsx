@@ -4,6 +4,7 @@ import './index.css'
 import Layout from './Layout'
 import { ThemeProvider } from './context/ThemeContext'
 import { IdiomaProvider } from "./context/IdiomaContext";
+import { HistoricoProvider } from "./context/HistoricoContext";
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import { Toaster } from "sonner";
 
@@ -49,8 +50,10 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
    <ThemeProvider>
     <IdiomaProvider>
+     <HistoricoProvider>
     <RouterProvider router={rotas} />
     <Toaster position="top-right" richColors closeButton />
+     </HistoricoProvider>
     </IdiomaProvider>
    </ThemeProvider>
   </StrictMode>,

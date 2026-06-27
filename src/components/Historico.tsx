@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import { useTheme } from "../context/ThemeContext";
 import { toast } from "sonner";
 import TraducaoCard from "./TraducaoCard";
+import { useHistorico } from "../context/HistoricoContext";
 
-const API_URL = import.meta.env.VITE_API_URL;
 
 type HistoricoProps = {
     isOpen: boolean;
@@ -22,7 +22,11 @@ export default function Historico({
     isOpen,
     onClose,
 }: HistoricoProps) {
-    const [historico, setHistorico] = useState<Traducao[]>([]);
+    const {
+    historico,
+    carregarHistorico,
+    deletarTraducao,
+    } = useHistorico();
     const [idiomas, setIdiomas] = useState<Record<string, string>>({});
 
     useEffect(() => {
@@ -55,63 +59,17 @@ export default function Historico({
         navigator.clipboard.writeText(conteudo);
     };
 
-    const carregarHistorico = async () => {
-        try {
-            const token = localStorage.getItem("token");
+    const handleDelete = async (id: number) => {
+    const confirmar = window.confirm(
+        "Tem certeza que deseja excluir esta tradução?"
+    );
 
-            const response = await fetch(
-                `${API_URL}/historico`,
-                {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                }
-            );
+    if (!confirmar) return;
 
-            const data = await response.json();
+    await deletarTraducao(id);
 
-            setHistorico(data);
-        } catch (error) {
-            console.error(error);
-        }
-    };
-
-    const deletarTraducao = async (id: number) => {
-        const confirmar = window.confirm(
-            "Tem certeza que deseja excluir esta tradução? Esta ação não pode ser desfeita."
-        );
-
-        if (!confirmar) return;
-
-        try {
-            const token = localStorage.getItem("token");
-
-            const response = await fetch(
-                `${API_URL}/historico/${id}`,
-                {
-                    method: "DELETE",
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                    },
-                }
-            );
-
-            if (!response.ok) {
-                throw new Error("Erro ao deletar");
-            }
-
-            setHistorico((historicoAtual) =>
-                historicoAtual.filter((item) => item.id !== id)
-            );
-
-            toast.success("Tradução removida com sucesso!");
-
-        } catch (error) {
-            console.error(error);
-
-            toast.error("Erro ao remover tradução!");
-        }
-    };
+    toast.success("Tradução removida!");
+   };  
 
     if (!isOpen) return null;
 
@@ -161,7 +119,7 @@ export default function Historico({
                                         traducaoItem={item}
                                         darkMode={darkMode}
                                         obterNomeIdioma={obterNomeIdioma}
-                                        onDelete={deletarTraducao}
+                                        onDelete={handleDelete}
                                         onCopy={copiarTraducao}
                                     />
                                 ))}

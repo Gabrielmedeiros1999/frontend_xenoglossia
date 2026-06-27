@@ -5,13 +5,12 @@ import { toast } from "sonner";
 import { useState, useEffect } from "react";
 import Historico from "./Historico";
 import TraducaoCard from "./TraducaoCard";
+import { useHistorico } from "../context/HistoricoContext";
 
 type MenuProps = {
   isOpen: boolean;
   onClose: () => void;
 };
-
-const API_URL = import.meta.env.VITE_API_URL;
 
 export default function Menu({ isOpen, onClose }: MenuProps) {
   const { darkMode, toggleTheme } = useTheme();
@@ -19,8 +18,14 @@ export default function Menu({ isOpen, onClose }: MenuProps) {
   const navigate = useNavigate();
   const usuarioSalvo = localStorage.getItem("usuario");
   const [historicoOpen, setHistoricoOpen] = useState(false);
-  const [ultimaTraducao, setUltimaTraducao] = useState<any>(null);
   const [idiomas, setIdiomas] = useState<Record<string, string>>({});
+  const { historico, carregarHistorico, deletarTraducao } = useHistorico();
+  
+  const usuario = usuarioSalvo
+  ? JSON.parse(usuarioSalvo)
+  : null;
+
+  const ultimaTraducao = historico[0];
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -35,9 +40,9 @@ export default function Menu({ isOpen, onClose }: MenuProps) {
 
   useEffect(() => {
     if (isOpen && usuario) {
-      carregarUltimaTraducao();
+     carregarHistorico();
     }
-  }, [isOpen]);
+  }, [isOpen, usuario]);
 
   useEffect(() => {
     fetch("/idiomas_pt.json")
@@ -54,32 +59,10 @@ export default function Menu({ isOpen, onClose }: MenuProps) {
     return idioma ? idioma[0] : codigo;
   }
 
-  const deletarTraducao = async (id: number) => {
-    try {
-      const token = localStorage.getItem("token");
+  const handleDelete = async (id: number) => {
+    await deletarTraducao(id);
 
-      const response = await fetch(
-        `${API_URL}/historico/${id}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Erro ao deletar");
-      }
-
-      toast.success("Tradução removida!");
-
-      setUltimaTraducao(null);
-
-    } catch (error) {
-      toast.error("Erro ao remover tradução");
-      console.error(error);
-    }
+    toast.success("Tradução removida!");
   };
 
   const copiarTraducao = (item: any) => {
@@ -99,34 +82,7 @@ ${item.traducao}
     toast.success("Tradução copiada!");
   };
 
-  const carregarUltimaTraducao = async () => {
-    try {
-     
-      const token = localStorage.getItem("token");
-
-      const response = await fetch(
-        `${API_URL}/historico?limit=1`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (Array.isArray(data) && data.length > 0) {
-        setUltimaTraducao(data[0]);
-      }
-    } catch (error) {
-      console.error(error);
-    } 
-  };
-
-  const usuario = usuarioSalvo
-    ? JSON.parse(usuarioSalvo)
-    : null;
-
+ 
   return (
     <>
       {isOpen && (
@@ -201,7 +157,7 @@ ${item.traducao}
                     traducaoItem={ultimaTraducao}
                     darkMode={darkMode}
                     obterNomeIdioma={obterNomeIdioma}
-                    onDelete={deletarTraducao}
+                    onDelete={handleDelete}
                     onCopy={copiarTraducao}
                   />
                 )}

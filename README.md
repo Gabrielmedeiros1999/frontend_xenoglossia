@@ -1,6 +1,6 @@
 # Xenoglossia Frontend
 
-Frontend do projeto open source de tradução, desenvolvido com FastAPI.
+Frontend do projeto open source de tradução, desenvolvido com TypeScript, React, Vite e Tailwind CSS.
 
 ## Instalação
 

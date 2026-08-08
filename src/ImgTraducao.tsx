@@ -5,11 +5,15 @@ import { Link } from "react-router-dom"
 import { useRef } from "react";
 import { useIdioma } from "./context/IdiomaContext";
 import { registrarIdioma } from "./utils/idiomaFavorito";
+import { useProgressoSimulado } from "./hooks/useProgressoSimulado";
+
 
 const API_URL = import.meta.env.VITE_API_URL;
 
 export default function ImgTraducao() {
   const { darkMode } = useTheme();
+
+  const { progresso, iniciar, concluir, cancelar } = useProgressoSimulado();
 
   const [openModal, setOpenModal] = useState(false);
   const [idiomas, setIdiomas] = useState<Record<string, string>>({});
@@ -61,6 +65,7 @@ export default function ImgTraducao() {
 
 async function enviarImagemDireto(file: File) {
   setCarregando(true);
+  iniciar();
 
   const formData = new FormData();
   formData.append("file", file);
@@ -85,14 +90,17 @@ async function enviarImagemDireto(file: File) {
 
     if (!res.ok) {
       setResultado(`Erro: ${data.detail}`);
+      cancelar();
       return;
     }
 
     setResultado(data.traducao);
+    concluir();
     registrarIdioma(idiomaOrigem.nome);  
     registrarIdioma(idiomaDestino.nome);
   } catch {
     setResultado("Erro ao enviar imagem");
+    cancelar();
   } finally {
     setCarregando(false);
   }
@@ -269,12 +277,19 @@ useEffect(() => {
           readOnly
           placeholder={
              carregando
-              ? "Traduzindo..."
+              ? `Traduzindo... ${progresso}%`
               : `Tradução do texto da imagem em ${idiomaDestino.nome}`
               }
           rows={6}
           className={`w-full bg-transparent p-4 outline-none resize-none text-sm ${placeholder}`}
         />
+
+        {carregando && (
+          <div className="absolute bottom-0 left-0 w-full h-1.5 bg-black/10">
+           <div className="h-full bg-green-500 transition-all duration-300 ease-out" style={{ width: `${progresso}%` }} />
+          </div>   
+        )}
+
         {resultado && (
           <button
            onClick={() => falarTexto(resultado, idiomaDestino.codigo)}

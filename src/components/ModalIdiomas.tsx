@@ -15,7 +15,7 @@ export function ModalIdiomas({ idiomas, onSelecionar, onFechar }: Props) {
   const carregando = Object.keys(idiomas).length === 0; 
 
   const listaFiltrada = Object.entries(idiomas).filter(([nome]) =>
-    nome.toLowerCase().includes(busca.toLowerCase())
+    nome.toLowerCase().includes(busca.trim().toLowerCase())
   );
 
   function confirmar() {

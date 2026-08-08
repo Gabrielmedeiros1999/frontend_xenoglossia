@@ -644,7 +644,7 @@ if (silenceTimeoutRef.current) {
 
 
         {/* Navbar */}
-        <div className="flex justify-center gap-6 mt-6 pb-4">
+        <div className={`flex justify-center gap-6  pb-4 ${!modoConversa ? "-mt-10" : "mt-6"}`}>
           <Link to="/textoTraducao">
             <img src={darkMode ? "/Component 3-dark.png" : "/Component 3.png"} className="h-10" />
           </Link>

@@ -11,14 +11,14 @@ export default function Layout() {
     <div className={`${darkMode ? "bg-[#0F172A] text-cyan-400" : "bg-gray-50 text-gray-800"} min-h-screen`}>
       
       {/* HEADER */}
-      <header className="flex justify-between p-4">
-        <div className="flex">
-        <img src="/Logo.png" className="h-8"/>
+      <header className="h-10 flex justify-between items-center pt-7 mb-5">
+        <div className="flex items-center -ml-5">
+        <img src="/Logo.png" className="h-13 -mr-7"/>
         <h1 className={`text-2xl font-bold ${darkMode ? "text-white" : "text-black"}`}>Xenoglossia</h1>
         </div>
         <img
           src={darkMode ? "/Menu-dark.png" : "/Menu.png"}
-          className="h-6 cursor-pointer"
+          className="h-6 cursor-pointer mr-5"
           onClick={() => setMenuOpen(true)}
         />
       </header>

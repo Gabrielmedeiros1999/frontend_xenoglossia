@@ -1,6 +1,6 @@
 import { useTheme } from "./context/ThemeContext";
 import { useNavigate, Link } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -16,6 +16,14 @@ export default function Cadastro() {
    const { darkMode } = useTheme();
    const navigate = useNavigate();
 
+   useEffect(() => {
+    const token = localStorage.getItem("token");
+     
+    if(token) {
+      navigate("/", { replace: true });
+    }
+   }, [navigate]);
+
    const validarSenha = (senha: string) => {
     if (senha.length < 8) {
        return "A senha deve ter pelo menos 8 caracteres";
@@ -23,6 +31,10 @@ export default function Cadastro() {
 
     if (senha.length > 64) {
        return "A senha deve ter no máximo 64 caracteres";
+    }
+    
+    if(!/[0-9]/.test(senha)) {
+      return "A senha deve conter pelo menos um número";
     }
 
     if (!/[A-Z]/.test(senha)) {
@@ -104,11 +116,11 @@ export default function Cadastro() {
         <header className="flex justify-between p-3 mb-10">
           <img src={darkMode ? "/icon-park-outline_left-dark.png": "/icon-park-outline_left.png" } 
                alt="Voltar"
-               className="cursor-pointer"
+               className="cursor-pointer -ml-3"
                onClick={() => navigate(-1)}
            />
-          <div className="flex">
-          <img src="/Logo.png" className="h-10"/>
+          <div className="flex items-center">
+          <img src="/Logo.png" className="h-13 -mr-6"/>
           <h1 className={`text-2xl font-bold ${darkMode ? "text-[#E2E8F0]" : "text-black"}`}>Xenoglossia</h1>          
           </div>
         </header>
@@ -135,6 +147,7 @@ export default function Cadastro() {
                onChange={(e) => setSenha(e.target.value)}
                placeholder="Digite sua senha" 
                className={`w-full rounded-lg border px-4 py-2 outline-none ${darkMode ? "border-white text-[#06B6D4]": "border-black"}`} />
+               <p className={`mt-2 text-sm ${darkMode ? "text-gray-300" : "text-gray-500"}`} >A senha deve ter no mínimo 8 caracteres, uma letra maiúscula, um número e um caractere especial.</p>
           </div>
           <div>
            <label className={`text-3xl font-bold ${darkMode ? "text-[#E2E8F0]" : "text-[#0F172A]"}`}>Confirme sua senha</label>

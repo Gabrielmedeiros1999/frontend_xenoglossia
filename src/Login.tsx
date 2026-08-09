@@ -1,6 +1,6 @@
 import { useTheme } from "./context/ThemeContext";
 import { useNavigate, Link } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 
 const API_URL = import.meta.env.VITE_API_URL;
@@ -13,6 +13,14 @@ export default function Login() {
 
    const { darkMode } = useTheme();
    const navigate = useNavigate();
+
+   useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if(token) {
+      navigate("/", { replace: true });
+    }
+   }, [navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -82,11 +90,11 @@ export default function Login() {
         <header className="flex justify-between p-3 mb-10">
           <img src={darkMode ? "/icon-park-outline_left-dark.png": "/icon-park-outline_left.png" } 
                alt="Voltar"
-               className="cursor-pointer"
+               className="cursor-pointer -ml-3"
                onClick={() => navigate(-1)}
            />
-          <div className="flex">
-          <img src="/Logo.png" className="h-10"/>
+          <div className="flex items-center">
+          <img src="/Logo.png" className="h-13 -mr-6"/>
           <h1 className={`text-2xl font-bold ${darkMode ? "text-[#E2E8F0]" : "text-black"}`}>Xenoglossia</h1>          
           </div>
         </header>

@@ -16,6 +16,7 @@ import Login from './Login.tsx'
 import Cadastro from './Cadastro.tsx'
 import Perfil from './Perfil.tsx'
 import AlterarSenha from './AlteraSenha.tsx'
+import Historico from './components/Historico.tsx'
 
 const rotas = createBrowserRouter([
   {
@@ -44,6 +45,10 @@ const rotas = createBrowserRouter([
    path: 'alterarSenha', 
    element: <AlterarSenha/>
   },
+  {
+    path: 'historico',
+    element: <Historico/>
+  }
 ]);
 
 createRoot(document.getElementById('root')!).render(

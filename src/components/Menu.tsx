@@ -3,7 +3,6 @@ import { useTheme } from "../context/ThemeContext";
 import { getIdiomaFavorito } from "../utils/idiomaFavorito";
 import { toast } from "sonner";
 import { useState, useEffect } from "react";
-import Historico from "./Historico";
 import TraducaoCard from "./TraducaoCard";
 import { useHistorico } from "../context/HistoricoContext";
 
@@ -17,7 +16,6 @@ export default function Menu({ isOpen, onClose }: MenuProps) {
   const idiomaFavorito = getIdiomaFavorito();
   const navigate = useNavigate();
   const usuarioSalvo = localStorage.getItem("usuario");
-  const [historicoOpen, setHistoricoOpen] = useState(false);
   const [idiomas, setIdiomas] = useState<Record<string, string>>({});
   const { historico, carregarHistorico, deletarTraducao } = useHistorico();
   
@@ -80,6 +78,11 @@ ${item.traducao}
     navigator.clipboard.writeText(conteudo);
 
     toast.success("Tradução copiada!");
+  };
+
+  const handleVerHistorico = () => {
+    onClose();
+    navigate("/historico");
   };
 
  
@@ -162,7 +165,7 @@ ${item.traducao}
                   />
                 )}
                 </div>
-                <button onClick={() => setHistoricoOpen(true)} className={`px-15 py-1 rounded font-bold cursor-pointer  ${darkMode ? "bg-green-500 text-black" : "bg-blue-600 text-white"}`}>
+                <button onClick={handleVerHistorico} className={`px-15 py-1 rounded font-bold cursor-pointer  ${darkMode ? "bg-green-500 text-black" : "bg-blue-600 text-white"}`}>
                   Ver histórico
                 </button>
               </>
@@ -183,10 +186,6 @@ ${item.traducao}
           )}
         </div>
       </div>
-      <Historico
-        isOpen={historicoOpen}
-        onClose={() => setHistoricoOpen(false)}
-      />
     </>
   );
 }

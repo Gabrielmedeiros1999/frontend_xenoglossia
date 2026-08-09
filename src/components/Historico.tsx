@@ -1,14 +1,9 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import { toast } from "sonner";
 import TraducaoCard from "./TraducaoCard";
 import { useHistorico } from "../context/HistoricoContext";
-
-
-type HistoricoProps = {
-    isOpen: boolean;
-    onClose: () => void;
-};
 
 type Traducao = {
     id: number;
@@ -18,14 +13,13 @@ type Traducao = {
     destino: string;
 };
 
-export default function Historico({
-    isOpen,
-    onClose,
-}: HistoricoProps) {
+export default function Historico() {
+    const navigate = useNavigate();
+    const { darkMode } = useTheme();
     const {
-    historico,
-    carregarHistorico,
-    deletarTraducao,
+        historico,
+        carregarHistorico,
+        deletarTraducao,
     } = useHistorico();
     const [idiomas, setIdiomas] = useState<Record<string, string>>({});
 
@@ -37,12 +31,8 @@ export default function Historico({
     }, []);
 
     useEffect(() => {
-        if (!isOpen) return;
-
         carregarHistorico();
-    }, [isOpen]);
-
-    const { darkMode } = useTheme();
+    }, []);
 
     const copiarTraducao = (item: Traducao) => {
         const conteudo = `
@@ -60,18 +50,16 @@ export default function Historico({
     };
 
     const handleDelete = async (id: number) => {
-    const confirmar = window.confirm(
-        "Tem certeza que deseja excluir esta tradução?"
-    );
+        const confirmar = window.confirm(
+            "Tem certeza que deseja excluir esta tradução?"
+        );
 
-    if (!confirmar) return;
+        if (!confirmar) return;
 
-    await deletarTraducao(id);
+        await deletarTraducao(id);
 
-    toast.success("Tradução removida!");
-   };  
-
-    if (!isOpen) return null;
+        toast.success("Tradução removida!");
+    };
 
     function obterNomeIdioma(codigo: string) {
         const idioma = Object.entries(idiomas).find(
@@ -82,52 +70,60 @@ export default function Historico({
     }
 
     return (
-        <>
-            <div
-                className="fixed inset-0 bg-black/50 z-50"
-                onClick={onClose}
-            />
-
-            <div className="fixed inset-0 flex items-center justify-center z-50">
-                <div className={` w-[90%] max-w-4xl rounded-xl p-4 ${darkMode ? "bg-[#0B1A2B]" : "bg-gray-200"}`}>
-
-                    <div className="flex justify-end mb-4">
-                        <img
-                            src={darkMode ? "/Component 7-dark.png" : "/Component 7.png"}
-                            className="cursor-pointer"
-                            onClick={onClose}
-                            alt="Fechar"
-                        />
-                    </div>
-
-                    <div className="max-h-[70vh] overflow-y-auto">
-                        {historico.length === 0 ? (
-                            <div className="text-center py-10">
-                                <h3 className="text-xl font-bold mb-2">
-                                    Nenhuma tradução encontrada
-                                </h3>
-
-                                <p className="text-gray-500">
-                                    Faça algumas traduções para que elas apareçam aqui.
-                                </p>
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-2 gap-3">
-                                {historico.map((item) => (
-                                    <TraducaoCard
-                                        key={item.id}
-                                        traducaoItem={item}
-                                        darkMode={darkMode}
-                                        obterNomeIdioma={obterNomeIdioma}
-                                        onDelete={handleDelete}
-                                        onCopy={copiarTraducao}
-                                    />
-                                ))}
-                            </div>
-                        )}
-                    </div>
+        <div
+            className={`min-h-screen p-4 ${
+                darkMode ? "bg-[#0B1A2B] text-white" : "bg-gray-200 text-black"
+            }`}
+        >
+            <header className="flex justify-between p-3 mb-10">
+                <img
+                    src={
+                        darkMode
+                            ? "/icon-park-outline_left-dark.png"
+                            : "/icon-park-outline_left.png"
+                    }
+                    alt="Voltar"
+                    className="cursor-pointer"
+                    onClick={() => navigate(-1)}
+                />
+                <div className="flex">
+                    <img src="/Logo.png" className="h-10" />
+                    <h1
+                        className={`text-2xl font-bold ${
+                            darkMode ? "text-[#E2E8F0]" : "text-black"
+                        }`}
+                    >
+                        Xenoglossia
+                    </h1>
                 </div>
+            </header>
+
+            <div className="max-w-4xl mx-auto">
+                {historico.length === 0 ? (
+                    <div className="text-center py-10">
+                        <h3 className="text-xl font-bold mb-2">
+                            Nenhuma tradução encontrada
+                        </h3>
+
+                        <p className="text-gray-500">
+                            Faça algumas traduções para que elas apareçam aqui.
+                        </p>
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-2 gap-3">
+                        {historico.map((item) => (
+                            <TraducaoCard
+                                key={item.id}
+                                traducaoItem={item}
+                                darkMode={darkMode}
+                                obterNomeIdioma={obterNomeIdioma}
+                                onDelete={handleDelete}
+                                onCopy={copiarTraducao}
+                            />
+                        ))}
+                    </div>
+                )}
             </div>
-        </>
+        </div>
     );
 }

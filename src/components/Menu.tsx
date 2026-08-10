@@ -2,7 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useTheme } from "../context/ThemeContext";
 import { getIdiomaFavorito } from "../utils/idiomaFavorito";
 import { toast } from "sonner";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import TraducaoCard from "./TraducaoCard";
 import { useHistorico } from "../context/HistoricoContext";
 
@@ -17,11 +17,12 @@ export default function Menu({ isOpen, onClose }: MenuProps) {
   const navigate = useNavigate();
   const usuarioSalvo = localStorage.getItem("usuario");
   const [idiomas, setIdiomas] = useState<Record<string, string>>({});
-  const { historico, carregarHistorico, deletarTraducao } = useHistorico();
-  
-  const usuario = usuarioSalvo
-  ? JSON.parse(usuarioSalvo)
-  : null;
+  const { historico, carregarHistorico, deletarTraducao, loading } = useHistorico();
+    
+  const usuario = useMemo(
+    () => (usuarioSalvo ? JSON.parse(usuarioSalvo) : null),
+    [usuarioSalvo]
+  );
 
   const ultimaTraducao = historico[0];
 
@@ -155,15 +156,30 @@ ${item.traducao}
               <>
                 <p className="font-bold mb-2">Sua última Tradução</p>
                 <div className="mb-4">
-                {ultimaTraducao && (
-                  <TraducaoCard
-                    traducaoItem={ultimaTraducao}
-                    darkMode={darkMode}
-                    obterNomeIdioma={obterNomeIdioma}
-                    onDelete={handleDelete}
-                    onCopy={copiarTraducao}
-                  />
-                )}
+                  {loading ? (
+                    <div className="flex flex-col items-center justify-center gap-2 py-2">
+                      <p className="text-sm italic">Carregando...</p>
+                      <div
+                        className={`w-6 h-6 border-4 rounded-full animate-spin ${
+                          darkMode
+                            ? "border-gray-500 border-t-green-500"
+                            : "border-gray-300 border-t-blue-600"
+                        }`}
+                      />
+                    </div>
+                  ) : ultimaTraducao ? (
+                    <TraducaoCard
+                      traducaoItem={ultimaTraducao}
+                      darkMode={darkMode}
+                      obterNomeIdioma={obterNomeIdioma}
+                      onDelete={handleDelete}
+                      onCopy={copiarTraducao}
+                    />
+                  ) : (
+                    <p className={`text-sm italic ${darkMode ? "text-gray-300" : "text-gray-600"}`}>
+                      Você ainda não fez nenhuma tradução.
+                    </p>
+                  )}
                 </div>
                 <button onClick={handleVerHistorico} className={`px-15 py-1 rounded font-bold cursor-pointer  ${darkMode ? "bg-green-500 text-black" : "bg-blue-600 text-white"}`}>
                   Ver histórico

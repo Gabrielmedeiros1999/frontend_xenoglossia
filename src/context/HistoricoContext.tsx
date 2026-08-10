@@ -1,9 +1,4 @@
-import {
-  createContext,
-  useContext,
-  useState,
-  useEffect,
-} from "react";
+import { createContext, useContext, useState, useEffect, } from "react";
 
 import type { ReactNode } from "react";
 
@@ -19,6 +14,7 @@ export type Traducao = {
 
 type HistoricoContextType = {
   historico: Traducao[];
+  loading: boolean;
   carregarHistorico: () => Promise<void>;
   deletarTraducao: (id: number) => Promise<void>;
 };
@@ -33,6 +29,7 @@ export function HistoricoProvider({
   children: ReactNode;
 }) {
   const [historico, setHistorico] = useState<Traducao[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const carregarHistorico = async () => {
     const token = localStorage.getItem("token");
@@ -41,6 +38,8 @@ export function HistoricoProvider({
       setHistorico([]);
       return;
     }
+
+    setLoading(true);
 
     try {
       const response = await fetch(`${API_URL}/historico`, {
@@ -54,6 +53,8 @@ export function HistoricoProvider({
       setHistorico(data);
     } catch (err) {
       console.error(err);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -82,6 +83,7 @@ export function HistoricoProvider({
     <HistoricoContext.Provider
       value={{
         historico,
+        loading,
         carregarHistorico,
         deletarTraducao,
       }}

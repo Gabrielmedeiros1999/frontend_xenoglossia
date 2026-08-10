@@ -22,6 +22,14 @@ export default function Historico() {
         deletarTraducao,
     } = useHistorico();
     const [idiomas, setIdiomas] = useState<Record<string, string>>({});
+    
+    useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+        navigate("/", { replace: true });
+    }
+    }, [navigate]);
 
     useEffect(() => {
         fetch("/idiomas_pt.json")

@@ -321,18 +321,20 @@ useEffect(() => {
       )}
 
       {cameraAtiva && (
-  <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-50">
-    
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      className="w-full max-w-md rounded-lg"
-    />
+  <div className="fixed inset-0 bg-black flex flex-col items-center justify-center z-50 h-dvh overflow-hidden">
+
+    <div className="flex-1 min-h-0 w-full flex items-center justify-center overflow-hidden">
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        className="max-w-full max-h-full w-auto h-auto object-contain rounded-lg"
+      />
+    </div>
 
     <canvas ref={canvasRef} className="hidden" />
 
-    <div className="flex gap-4 mt-4">
+    <div className="shrink-0 flex gap-4 my-4">
       <button
         onClick={tirarFoto}
         className="bg-green-500 px-4 py-2 rounded text-black"

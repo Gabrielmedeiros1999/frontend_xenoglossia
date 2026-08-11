@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 type Traducao = {
   id: number;
   texto: string;
@@ -21,6 +23,13 @@ export default function TraducaoCard({
   onDelete,
   onCopy,
 }: TraducaoCardProps) {
+  const [mostrarModal, setMostrarModal] = useState(false);
+
+  const confirmarExclusao = () => {
+    onDelete?.(traducaoItem.id);
+    setMostrarModal(false);
+  };
+
   return (
     <div
       className={`border rounded-lg p-3 border-black ${
@@ -46,7 +55,7 @@ export default function TraducaoCard({
               src="/Cancel.png"
               alt="Excluir"
               className="w-5 h-5 cursor-pointer hover:scale-110 transition"
-              onClick={() => onDelete(traducaoItem.id)}
+              onClick={() => setMostrarModal(true)}
             />
           )}
 
@@ -70,6 +79,32 @@ export default function TraducaoCard({
 
       <p className="font-semibold">Tradução</p>
       <p>{traducaoItem.traducao}</p>
+
+      {mostrarModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className={`rounded-lg p-6 w-72 text-center shadow-lg ${darkMode ? " bg-[#0F172A] text-cyan-500" : "bg-gray-50 text-black"}`}>
+            <p className="font-bold mb-6">
+              Você deseja apagar essa tradução?
+            </p>
+
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={confirmarExclusao}
+                className="px-6 py-1 rounded-md font-bold bg-red-600 text-white cursor-pointer hover:opacity-90"
+              >
+                Sim
+              </button>
+
+              <button
+                onClick={() => setMostrarModal(false)}
+                className={`px-6 py-1 rounded-md font-bold cursor-pointer hover:opacity-90 ${darkMode ? "bg-green-500 text-black" : "bg-blue-600 text-white"}`}
+              >
+                Não
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

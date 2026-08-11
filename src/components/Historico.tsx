@@ -58,14 +58,7 @@ export default function Historico() {
     };
 
     const handleDelete = async (id: number) => {
-        const confirmar = window.confirm(
-            "Tem certeza que deseja excluir esta tradução?"
-        );
-
-        if (!confirmar) return;
-
         await deletarTraducao(id);
-
         toast.success("Tradução removida!");
     };
 

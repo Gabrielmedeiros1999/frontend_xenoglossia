@@ -14,6 +14,16 @@ export default function Perfil() {
    const { darkMode } = useTheme();
    const navigate = useNavigate();
 
+      
+    useEffect(() => {
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+        navigate("/", { replace: true });
+    }
+    }, [navigate]);
+
+
    useEffect(() => {
     const usuarioSalvo = localStorage.getItem("usuario");
 

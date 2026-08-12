@@ -92,7 +92,7 @@ export default function Historico() {
             </header>
 
             <div className="max-w-4xl mx-auto">
-                {historico.length === 0 ? (
+                {!Array.isArray(historico) || historico.length === 0 ? (
                     <div className="text-center py-10">
                         <h3 className="text-xl font-bold mb-2">
                             Nenhuma tradução encontrada

@@ -1,8 +1,6 @@
 import { createContext, useContext, useState, useEffect, } from "react";
-
 import type { ReactNode } from "react";
-
-const API_URL = import.meta.env.VITE_API_URL;
+import { apiFetch, SessaoExpiradaError } from "../utils/apiFetch";
 
 export type Traducao = {
   id: number;
@@ -19,15 +17,9 @@ type HistoricoContextType = {
   deletarTraducao: (id: number) => Promise<void>;
 };
 
-const HistoricoContext = createContext<
-  HistoricoContextType | undefined
->(undefined);
+const HistoricoContext = createContext<HistoricoContextType | undefined>(undefined);
 
-export function HistoricoProvider({
-  children,
-}: {
-  children: ReactNode;
-}) {
+export function HistoricoProvider({ children }: { children: ReactNode }) {
   const [historico, setHistorico] = useState<Traducao[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -42,38 +34,43 @@ export function HistoricoProvider({
     setLoading(true);
 
     try {
-      const response = await fetch(`${API_URL}/historico`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await apiFetch("/historico");
+
+      if (!response.ok) {
+        console.error("Erro ao carregar histórico:", response.status);
+        setHistorico([]);
+        return;
+      }
 
       const data = await response.json();
 
-      setHistorico(data);
+      if (Array.isArray(data)) {
+        setHistorico(data);
+      } else if (Array.isArray(data?.historico)) {
+        setHistorico(data.historico);
+      } else {
+        console.error("Resposta inesperada de /historico:", data);
+        setHistorico([]);
+      }
     } catch (err) {
-      console.error(err);
+      if (!(err instanceof SessaoExpiradaError)) {
+        console.error(err);
+      }
+      setHistorico([]);
     } finally {
       setLoading(false);
     }
   };
 
   const deletarTraducao = async (id: number) => {
-    const token = localStorage.getItem("token");
-
-    const response = await fetch(`${API_URL}/historico/${id}`, {
-        method: "DELETE",
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
+    const response = await apiFetch(`/historico/${id}`, { method: "DELETE" });
 
     if (!response.ok) {
-        throw new Error("Erro ao deletar");
+      throw new Error("Erro ao deletar");
     }
 
     await carregarHistorico();
-};
+  };
 
   useEffect(() => {
     carregarHistorico();
@@ -81,12 +78,7 @@ export function HistoricoProvider({
 
   return (
     <HistoricoContext.Provider
-      value={{
-        historico,
-        loading,
-        carregarHistorico,
-        deletarTraducao,
-      }}
+      value={{ historico, loading, carregarHistorico, deletarTraducao }}
     >
       {children}
     </HistoricoContext.Provider>

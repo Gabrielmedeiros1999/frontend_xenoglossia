@@ -4,8 +4,7 @@ import { ModalIdiomas } from "./components/ModalIdiomas";
 import { Link } from "react-router-dom"
 import { useIdioma } from "./context/IdiomaContext";
 import { registrarIdioma } from "./utils/idiomaFavorito";
-
-const API_URL = import.meta.env.VITE_API_URL;
+import { apiFetch, SessaoExpiradaError } from "./utils/apiFetch";
 
 export default function TextoTraducao() {
   const { darkMode } = useTheme();
@@ -16,6 +15,7 @@ export default function TextoTraducao() {
   const [textoOrigem, setTextoOrigem] = useState("");
   const [textoTraduzido, setTextoTraduzido] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [falando, setFalando] = useState<"origem" | "destino" | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -40,14 +40,25 @@ function handleSelecionar(nome: string, codigo: string) {
   }
 }
   
- function falarTexto(texto: string, idioma: string) {
+ function falarTexto(texto: string, idioma: string, campo: "origem" | "destino") {
   if (!texto) return;
+
+  // Clicou de novo no mesmo botão enquanto fala: para a fala
+  if (falando === campo) {
+    speechSynthesis.cancel();
+    setFalando(null);
+    return;
+  }
 
   const utterance = new SpeechSynthesisUtterance(texto);
   utterance.lang = idioma;
   utterance.volume = 1;    
   utterance.rate = 1;      
   utterance.pitch = 1;     
+
+  utterance.onstart = () => setFalando(campo);
+  utterance.onend = () => setFalando(null);
+  utterance.onerror = () => setFalando(null);
 
   speechSynthesis.cancel();
 
@@ -65,25 +76,18 @@ function handleSelecionar(nome: string, codigo: string) {
   }
 }
 
- async function traduzir() {
+async function traduzir() {
   if (!textoOrigem.trim()) return;
   setCarregando(true);
- 
-  const token = localStorage.getItem("token");
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    ...(token && { Authorization: `Bearer ${token}` }),
-  };
-   
-  abortRef.current?.abort();
 
+  abortRef.current?.abort();
   const controller = new AbortController();
   abortRef.current = controller;
 
   try {
-    const res = await fetch(`${API_URL}/traduzir`, {
+    const res = await apiFetch("/traduzir", {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json" },
       signal: controller.signal,
       body: JSON.stringify({
         texto: textoOrigem,
@@ -94,7 +98,6 @@ function handleSelecionar(nome: string, codigo: string) {
     });
 
     const data = await res.json();
-  
 
     if (!res.ok) {
       setTextoTraduzido(`Erro: ${data.detail}`);
@@ -102,12 +105,16 @@ function handleSelecionar(nome: string, codigo: string) {
     }
 
     setTextoTraduzido(data.traducao);
-    registrarIdioma(idiomaOrigem.nome);  
-    registrarIdioma(idiomaDestino.nome); 
+    registrarIdioma(idiomaOrigem.nome);
+    registrarIdioma(idiomaDestino.nome);
   } catch (e) {
+    if (e instanceof SessaoExpiradaError) {
+      // apiFetch já redireciona pro login; não precisa fazer nada aqui
+      return;
+    }
     setTextoTraduzido("Erro ao traduzir. Tente novamente.");
   } finally {
-     setCarregando(false);
+    setCarregando(false);
   }
 }
 
@@ -161,13 +168,16 @@ useEffect(() => {
         {/* Ícone de voz */}
         {textoOrigem && (
          <button
-           onClick={() => falarTexto(textoOrigem, idiomaOrigem.codigo)}
+           onClick={() => falarTexto(textoOrigem, idiomaOrigem.codigo, "origem")}
            className="absolute top-2 right-2"
+           aria-label={falando === "origem" ? "Parar leitura" : "Ouvir texto"}
            >
           <img
            src={darkMode ? "/Voice Recognition-dark.png" : "/Voice Recognition.png"}
            alt="ouvir"
-           className="w-8 h-8 cursor-pointer"
+           className={`w-8 h-8 cursor-pointer transition-transform ${
+             falando === "origem" ? "scale-110 animate-pulse" : ""
+           }`}
           />
          </button>
         )}
@@ -195,13 +205,16 @@ useEffect(() => {
         />
         {textoTraduzido && (
           <button
-           onClick={() => falarTexto(textoTraduzido, idiomaDestino.codigo)}
+           onClick={() => falarTexto(textoTraduzido, idiomaDestino.codigo, "destino")}
            className="absolute top-2 right-2"
+           aria-label={falando === "destino" ? "Parar leitura" : "Ouvir texto"}
             >
           <img
            src={darkMode ? "/Voice Recognition-dark.png" : "/Voice Recognition.png"}
            alt="ouvir"
-           className="w-8 h-8 cursor-pointer"
+           className={`w-8 h-8 cursor-pointer transition-transform ${
+             falando === "destino" ? "scale-110 animate-pulse" : ""
+           }`}
           />
          </button>
         )}

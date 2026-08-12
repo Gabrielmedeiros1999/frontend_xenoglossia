@@ -4,8 +4,8 @@ import { ModalIdiomas } from "./components/ModalIdiomas";
 import { Link } from "react-router-dom";
 import { useIdioma } from "./context/IdiomaContext";
 import { registrarIdioma } from "./utils/idiomaFavorito";
+import { apiFetch, SessaoExpiradaError } from "./utils/apiFetch";
 
-const API_URL = import.meta.env.VITE_API_URL;
 
 interface MensagemConversa {
   pessoa: 1 | 2;
@@ -22,6 +22,7 @@ export default function VozTraducao() {
   const [resultado, setResultado] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [gravando, setGravando] = useState(false);
+  const [falando, setFalando] = useState<"resultado" | null>(null);
 
   // Modo conversação
   const [modoConversa, setModoConversa] = useState(false);
@@ -67,13 +68,26 @@ export default function VozTraducao() {
     else setIdiomaDestino(idioma);
   }
 
-  function falarTexto(texto: string, idioma: string) {
+  function falarTexto(texto: string, idioma: string, campo: "resultado") {
     if (!texto) return;
+
+    // Clicou de novo enquanto fala: para a fala
+    if (falando === campo) {
+      speechSynthesis.cancel();
+      setFalando(null);
+      return;
+    }
+
     const utterance = new SpeechSynthesisUtterance(texto);
     utterance.lang = idioma;
     utterance.volume = 1;
     utterance.rate = 1;
     utterance.pitch = 1;
+
+    utterance.onstart = () => setFalando(campo);
+    utterance.onend = () => setFalando(null);
+    utterance.onerror = () => setFalando(null);
+
     speechSynthesis.cancel();
     const falar = () => {
       const vozes = speechSynthesis.getVoices();
@@ -128,40 +142,36 @@ export default function VozTraducao() {
     streamRef.current = null;
     setGravando(false);
   }
+async function enviarAudio(audioBlob: Blob) {
+  setCarregando(true);
+  try {
+    const formData = new FormData();
+    formData.append("file", audioBlob, "audio.webm");
+    formData.append("origem", idiomaOrigem.codigo);
+    formData.append("destino", idiomaDestino.codigo);
 
-  async function enviarAudio(audioBlob: Blob) {
-    setCarregando(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", audioBlob, "audio.webm");
-      formData.append("origem", idiomaOrigem.codigo);
-      formData.append("destino", idiomaDestino.codigo);
-        
-      const token = localStorage.getItem("token");
+    const res = await apiFetch("/traduzir-voz", {
+      method: "POST",
+      body: formData,
+    });
 
-      const res = await fetch(`${API_URL}/traduzir-voz`, { 
-        method: "POST", 
-        headers: {
-          ...(token && {
-            Authorization: `Bearer ${token}`,
-             }),
-             },
-        body: formData
-       });
+    const data = await res.json();
 
-      const data = await res.json();
-
-      if (!res.ok) { setResultado(`Erro: ${data.detail}`); return; }
-
-      setResultado(data.traducao);
-      registrarIdioma(idiomaOrigem.nome);
-      registrarIdioma(idiomaDestino.nome);
-    } catch {
-      setResultado("Erro ao conectar com o servidor");
-    } finally {
-      setCarregando(false);
+    if (!res.ok) {
+      setResultado(`Erro: ${data.detail}`);
+      return;
     }
+
+    setResultado(data.traducao);
+    registrarIdioma(idiomaOrigem.nome);
+    registrarIdioma(idiomaDestino.nome);
+  } catch (e) {
+    if (e instanceof SessaoExpiradaError) return;
+    setResultado("Erro ao conectar com o servidor");
+  } finally {
+    setCarregando(false);
   }
+}
 
   // ── Modo Conversação ─────────────────────────────────────────────────────────
 
@@ -308,7 +318,7 @@ detectarSilencio();
   }
 
 async function processarTurno(audioBlob: Blob) {
-  if (!modoConversaRef.current) return; // ← verificação no início
+  if (!modoConversaRef.current) return;
 
   setCarregando(true);
   const turno = turnoRef.current;
@@ -321,21 +331,15 @@ async function processarTurno(audioBlob: Blob) {
     formData.append("origem", origemTurno);
     formData.append("destino", destinoTurno);
 
-    const token = localStorage.getItem("token");
+    const res = await apiFetch("/traduzir-voz", {
+      method: "POST",
+      body: formData,
+    });
 
-    const res = await fetch(`${API_URL}/traduzir-voz`, {
-       method: "POST", 
-       headers: {
-        ...(token && {
-          Authorization: `Bearer ${token}`,
-          }),
-          },
-       body: formData 
-      });
     const data = await res.json();
 
     if (!res.ok) return;
-    if (!modoConversaRef.current) return; // ← verifica após o fetch
+    if (!modoConversaRef.current) return;
 
     const novaMensagem: MensagemConversa = {
       pessoa: turno,
@@ -345,12 +349,10 @@ async function processarTurno(audioBlob: Blob) {
 
     setConversa(prev => [...prev, novaMensagem]);
 
-    // Alterna o turno
     const proximoTurno: 1 | 2 = turno === 1 ? 2 : 1;
     setTurnoAtual(proximoTurno);
     turnoRef.current = proximoTurno;
 
-    // Controle para evitar iniciar dois turnos
     let proximoTurnoIniciado = false;
 
     const iniciarProximoTurno = () => {
@@ -360,14 +362,11 @@ async function processarTurno(audioBlob: Blob) {
       }
     };
 
-    // Fala a tradução
     const utterance = new SpeechSynthesisUtterance(data.traducao);
     utterance.lang = destinoTurno;
     utterance.volume = 1;
     utterance.rate = 1;
     utterance.pitch = 1;
-
-    utterance.onend = iniciarProximoTurno;
 
     speechSynthesis.cancel();
 
@@ -381,17 +380,22 @@ async function processarTurno(audioBlob: Blob) {
     if (speechSynthesis.getVoices().length > 0) falar();
     else speechSynthesis.addEventListener("voiceschanged", falar, { once: true });
 
-    // Fallback caso onend não dispare
     const fallbackTimeout = setTimeout(() => {
-  iniciarProximoTurno();
-}, 1500);
+      iniciarProximoTurno();
+    }, 1500);
 
-utterance.onend = () => {
-  clearTimeout(fallbackTimeout);
-  iniciarProximoTurno();
-};
-
-  } catch {
+    utterance.onend = () => {
+      clearTimeout(fallbackTimeout);
+      iniciarProximoTurno();
+    };
+  } catch (e) {
+    if (e instanceof SessaoExpiradaError) {
+      // encerra o modo conversação, já que a sessão caiu
+      modoConversaRef.current = false;
+      setModoConversa(false);
+      setGravando(false);
+      return;
+    }
     console.error("Erro no turno de conversação");
   } finally {
     setCarregando(false);
@@ -512,8 +516,18 @@ if (silenceTimeoutRef.current) {
                   className={`w-full bg-transparent p-4 outline-none resize-none text-sm ${placeholder}`}
                 />
                 {resultado && !carregando && (
-                  <button onClick={() => falarTexto(resultado, idiomaDestino.codigo)} className="absolute top-2 right-2">
-                    <img src={darkMode ? "/Voice Recognition-dark.png" : "/Voice Recognition.png"} alt="ouvir" className="w-8 h-8 cursor-pointer" />
+                  <button
+                    onClick={() => falarTexto(resultado, idiomaDestino.codigo, "resultado")}
+                    className="absolute top-2 right-2"
+                    aria-label={falando === "resultado" ? "Parar leitura" : "Ouvir texto"}
+                  >
+                    <img
+                      src={darkMode ? "/Voice Recognition-dark.png" : "/Voice Recognition.png"}
+                      alt="ouvir"
+                      className={`w-8 h-8 cursor-pointer transition-transform ${
+                        falando === "resultado" ? "scale-110 animate-pulse" : ""
+                      }`}
+                    />
                   </button>
                 )}
               </div>

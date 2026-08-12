@@ -6,9 +6,8 @@ import { useRef } from "react";
 import { useIdioma } from "./context/IdiomaContext";
 import { registrarIdioma } from "./utils/idiomaFavorito";
 import { useProgressoSimulado } from "./hooks/useProgressoSimulado";
+import { apiFetch, SessaoExpiradaError } from "./utils/apiFetch";
 
-
-const API_URL = import.meta.env.VITE_API_URL;
 
 export default function ImgTraducao() {
   const { darkMode } = useTheme();
@@ -24,6 +23,7 @@ export default function ImgTraducao() {
   const [preview, setPreview] = useState<string | null>(null);
   const [resultado, setResultado] = useState("");
   const [carregando, setCarregando] = useState(false);
+  const [falando, setFalando] = useState<"resultado" | null>(null);
   
   const [cameraAtiva, setCameraAtiva] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -73,16 +73,8 @@ async function enviarImagemDireto(file: File) {
   formData.append("destino", idiomaDestino.codigo);
 
   try {
-
-    const token = localStorage.getItem("token");
-
-    const res = await fetch(`${API_URL}/traduzir-imagem`, {
+    const res = await apiFetch("/traduzir-imagem", {
       method: "POST",
-      headers: {
-        ...(token && {
-           Authorization: `Bearer ${token}`,
-           }),
-           },
       body: formData,
     });
 
@@ -96,9 +88,13 @@ async function enviarImagemDireto(file: File) {
 
     setResultado(data.traducao);
     concluir();
-    registrarIdioma(idiomaOrigem.nome);  
+    registrarIdioma(idiomaOrigem.nome);
     registrarIdioma(idiomaDestino.nome);
-  } catch {
+  } catch (e) {
+    if (e instanceof SessaoExpiradaError) {
+      cancelar();
+      return;
+    }
     setResultado("Erro ao enviar imagem");
     cancelar();
   } finally {
@@ -175,14 +171,25 @@ useEffect(() => {
   };
 }, [stream]);
 
- function falarTexto(texto: string, idioma: string) {
+ function falarTexto(texto: string, idioma: string, campo: "resultado") {
   if (!texto) return;
+
+  // Clicou de novo enquanto fala: para a fala
+  if (falando === campo) {
+    speechSynthesis.cancel();
+    setFalando(null);
+    return;
+  }
 
   const utterance = new SpeechSynthesisUtterance(texto);
   utterance.lang = idioma;
   utterance.volume = 1;    
   utterance.rate = 1;      
   utterance.pitch = 1;     
+
+  utterance.onstart = () => setFalando(campo);
+  utterance.onend = () => setFalando(null);
+  utterance.onerror = () => setFalando(null);
 
   speechSynthesis.cancel();
 
@@ -292,13 +299,16 @@ useEffect(() => {
 
         {resultado && (
           <button
-           onClick={() => falarTexto(resultado, idiomaDestino.codigo)}
+           onClick={() => falarTexto(resultado, idiomaDestino.codigo, "resultado")}
            className="absolute top-2 right-2"
+           aria-label={falando === "resultado" ? "Parar leitura" : "Ouvir texto"}
             >
           <img
            src={darkMode ? "/Voice Recognition-dark.png" : "/Voice Recognition.png"}
            alt="ouvir"
-           className="w-8 h-8 cursor-pointer"
+           className={`w-8 h-8 cursor-pointer transition-transform ${
+             falando === "resultado" ? "scale-110 animate-pulse" : ""
+           }`}
           />
          </button>
         )}

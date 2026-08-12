@@ -121,11 +121,11 @@ ${item.traducao}
           </div>
 
           {/* TEMA */}
-          <div className="flex items-center  mb-6 ">
-            <h2 className="font-bold p-1 text-2xl">Tema</h2>
+          <div className="flex items-center justify-center gap-2  mb-6 ">
+            <h2 className="font-bold text-2xl">Tema</h2>
             <img src={darkMode ? "/Component 12-dark.png" : "/Component 12.png"}
               alt="altera tema"
-              className=" h-9 cursor-pointer transition-transform duration-150 active:scale-90"
+              className=" h-9 translate-y-1  cursor-pointer transition-transform duration-150 active:scale-90"
               onClick={toggleTheme}
             />
           </div>

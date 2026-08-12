@@ -24,19 +24,29 @@ export default function TraducaoCard({
   onCopy,
 }: TraducaoCardProps) {
   const [mostrarModal, setMostrarModal] = useState(false);
+  const [excluindo, setExcluindo] = useState(false);
 
-  const confirmarExclusao = () => {
-    onDelete?.(traducaoItem.id);
+  const confirmarExclusao = async () => {
+    if (excluindo) return;
+
+    setExcluindo(true);
     setMostrarModal(false);
+
+    try {
+      await onDelete?.(traducaoItem.id);
+    } catch (err) {
+      // Se falhar, libera as ações novamente para o usuário tentar de novo
+      setExcluindo(false);
+    }
   };
 
   return (
     <div
-      className={`border rounded-lg p-3 border-black ${
+      className={`border rounded-lg p-3 border-black transition-opacity ${
         darkMode
           ? "bg-green-500 text-black"
           : "bg-blue-600 text-white"
-      }`}
+      } ${excluindo ? "opacity-60" : ""}`}
     >
       <div className="flex justify-between items-start">
         <div>
@@ -54,8 +64,12 @@ export default function TraducaoCard({
             <img
               src="/Cancel.png"
               alt="Excluir"
-              className="w-5 h-5 cursor-pointer hover:scale-110 transition"
-              onClick={() => setMostrarModal(true)}
+              className={`w-5 h-5 transition ${
+                excluindo
+                  ? "opacity-40 cursor-not-allowed pointer-events-none"
+                  : "cursor-pointer hover:scale-110"
+              }`}
+              onClick={() => !excluindo && setMostrarModal(true)}
             />
           )}
 
@@ -63,8 +77,12 @@ export default function TraducaoCard({
             <img
               src="/streamline-ultimate_paper-write.png"
               alt="Copiar"
-              className="w-5 h-5 cursor-pointer hover:scale-110 transition"
-              onClick={() => onCopy(traducaoItem)}
+              className={`w-5 h-5 transition ${
+                excluindo
+                  ? "opacity-40 cursor-not-allowed pointer-events-none"
+                  : "cursor-pointer hover:scale-110"
+              }`}
+              onClick={() => !excluindo && onCopy(traducaoItem)}
             />
           )}
         </div>
@@ -90,7 +108,8 @@ export default function TraducaoCard({
             <div className="flex justify-center gap-4">
               <button
                 onClick={confirmarExclusao}
-                className="px-6 py-1 rounded-md font-bold bg-red-600 text-white cursor-pointer hover:opacity-90"
+                disabled={excluindo}
+                className="px-6 py-1 rounded-md font-bold bg-red-600 text-white cursor-pointer hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Sim
               </button>

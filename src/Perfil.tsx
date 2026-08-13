@@ -190,7 +190,7 @@ export default function Perfil() {
         {mostrarModal && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center px-4 z-50">
             <div className={`w-full max-w-sm rounded-xl p-6 shadow-lg ${darkMode ? "bg-[#1E293B]" : "bg-white"}`}>
-              <h3 className={`text-xl font-bold text-center ${darkMode ? "text-[#E2E8F0]" : "text-[#0F172A]"}`}>
+              <h3 className={`text-xl font-bold text-center ${darkMode ? "text-[#06B6D4]" : "text-[#0F172A]"}`}>
                 Você deseja Apagar essa conta?
               </h3>
               <p className="text-sm text-gray-400 text-center mt-2">

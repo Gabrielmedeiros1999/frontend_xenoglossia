@@ -47,8 +47,14 @@ export default function ImgTraducao() {
   const idioma = { nome, codigo };
 
   if (tipoSelecao === "origem") {
+    if(codigo === idiomaDestino.codigo) {
+      setIdiomaDestino(idiomaOrigem);
+    }
     setIdiomaOrigem(idioma);
   } else {
+    if(codigo === idiomaOrigem.codigo){
+      setIdiomaOrigem(idiomaDestino);
+    }
     setIdiomaDestino(idioma);
   }
 }

@@ -62,11 +62,21 @@ export default function VozTraducao() {
     setOpenModal(true);
   }
 
-  function handleSelecionar(nome: string, codigo: string) {
-    const idioma = { nome, codigo };
-    if (tipoSelecao === "origem") setIdiomaOrigem(idioma);
-    else setIdiomaDestino(idioma);
+function handleSelecionar(nome: string, codigo: string) {
+  const idioma = { nome, codigo };
+
+  if (tipoSelecao === "origem") {
+    if(codigo === idiomaDestino.codigo) {
+      setIdiomaDestino(idiomaOrigem);
+    }
+    setIdiomaOrigem(idioma);
+  } else {
+    if(codigo === idiomaOrigem.codigo){
+      setIdiomaOrigem(idiomaDestino);
+    }
+    setIdiomaDestino(idioma);
   }
+}
 
   function falarTexto(texto: string, idioma: string, campo: "resultado") {
     if (!texto) return;

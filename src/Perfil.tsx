@@ -10,6 +10,7 @@ export default function Perfil() {
    const [nome, setNome] = useState("");
    const [email, setEmail] = useState("");
    const [isLoading, setIsLoading] = useState(false);
+   const [mostrarModal, setMostrarModal] = useState(false);
 
    const { darkMode } = useTheme();
    const navigate = useNavigate();
@@ -34,6 +35,44 @@ export default function Perfil() {
       setEmail(usuario.email);
     }
    }, []);
+
+   const handleApagarConta = async () => {
+  
+    const token = localStorage.getItem("token");
+
+    if (!token) {
+      toast.error("Usuário não autenticado");
+      navigate("/login");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/auth/conta`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.detail || "Erro ao apagar conta");
+      }
+
+      localStorage.removeItem("token");
+      localStorage.removeItem("usuario");
+
+      toast.success("Conta apagada com sucesso");
+      navigate("/", { replace: true });
+
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Erro ao apagar conta"
+      );
+    } finally {
+      setMostrarModal(false); 
+   }
+};
 
    const handleSalvar = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -137,6 +176,9 @@ export default function Perfil() {
             Alterar Senha
           </button>
           </Link>
+          <button type="button" onClick={() => setMostrarModal(true)}  className="w-full cursor-pointer py-2 rounded-md mb-4 font-bold bg-red-600 text-white">
+            Apagar Conta
+          </button>
           <button 
            type="submit" 
            disabled={isLoading}
@@ -145,6 +187,35 @@ export default function Perfil() {
             {isLoading ? "Salvando..." : "Salvar"}
            </button>
         </form>
+        {mostrarModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center px-4 z-50">
+            <div className={`w-full max-w-sm rounded-xl p-6 shadow-lg ${darkMode ? "bg-[#1E293B]" : "bg-white"}`}>
+              <h3 className={`text-xl font-bold text-center ${darkMode ? "text-[#E2E8F0]" : "text-[#0F172A]"}`}>
+                Você deseja Apagar essa conta?
+              </h3>
+              <p className="text-sm text-gray-400 text-center mt-2">
+                Apagando a conta seu histórico de traduções também será apagado
+              </p>
+
+              <div className="flex gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => setMostrarModal(false)}
+                  className={`w-full cursor-pointer py-2 rounded-md font-bold ${darkMode ? "bg-green-500 text-black" : "bg-blue-600 text-white"}`}
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleApagarConta}
+                  className="w-full cursor-pointer py-2 rounded-md font-bold bg-red-600 text-white"
+                >
+                  Apagar
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     )
 }

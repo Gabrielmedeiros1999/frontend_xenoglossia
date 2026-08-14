@@ -15,6 +15,7 @@ type HistoricoContextType = {
   loading: boolean;
   carregarHistorico: () => Promise<void>;
   deletarTraducao: (id: number) => Promise<void>;
+  apagarTodoHistorico: () => Promise<void>;
 };
 
 const HistoricoContext = createContext<HistoricoContextType | undefined>(undefined);
@@ -72,13 +73,23 @@ export function HistoricoProvider({ children }: { children: ReactNode }) {
     await carregarHistorico();
   };
 
+  const apagarTodoHistorico = async () => {
+    const response = await apiFetch("/historico", { method: "DELETE" });
+
+    if (!response.ok) {
+      throw new Error("Erro ao apagar histórico");
+    }
+
+    setHistorico([]);
+  };
+
   useEffect(() => {
     carregarHistorico();
   }, []);
 
   return (
     <HistoricoContext.Provider
-      value={{ historico, loading, carregarHistorico, deletarTraducao }}
+      value={{ historico, loading, carregarHistorico, deletarTraducao, apagarTodoHistorico }}
     >
       {children}
     </HistoricoContext.Provider>

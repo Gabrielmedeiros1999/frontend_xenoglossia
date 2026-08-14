@@ -132,7 +132,7 @@ useEffect(() => {
 
   const delay = setTimeout(() => {
     traduzir();
-  }, 800); 
+  }, 900); 
 
   return () => clearTimeout(delay);
 }, [textoOrigem]);
@@ -199,7 +199,7 @@ useEffect(() => {
       {/* Área de texto traduzido */}
       <div className={`relative rounded-xl border  ${darkMode ? "bg-zinc-700 border-white" : "bg-zinc-200 border-black"} mb-6`}>
         <textarea
-          value={textoTraduzido}
+          value={carregando ? "" : textoTraduzido}
           readOnly
           placeholder={
              carregando
@@ -209,7 +209,7 @@ useEffect(() => {
           rows={6}
           className={`w-full bg-transparent p-4 outline-none resize-none text-sm ${placeholder}`}
         />
-        {textoTraduzido && (
+        {!carregando && textoTraduzido && (
           <button
            onClick={() => falarTexto(textoTraduzido, idiomaDestino.codigo, "destino")}
            className="absolute top-2 right-2"

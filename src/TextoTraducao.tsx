@@ -5,9 +5,11 @@ import { Link } from "react-router-dom"
 import { useIdioma } from "./context/IdiomaContext";
 import { registrarIdioma } from "./utils/idiomaFavorito";
 import { apiFetch, SessaoExpiradaError } from "./utils/apiFetch";
+import { useProgressoSimulado } from "./hooks/useProgressoSimulado";
 
 export default function TextoTraducao() {
   const { darkMode } = useTheme();
+  const { progresso, iniciar, concluir, cancelar } = useProgressoSimulado();
   const [openModal, setOpenModal] = useState(false);
   const [idiomas, setIdiomas] = useState<Record<string, string>>({});
   const { idiomaOrigem, idiomaDestino, setIdiomaOrigem, setIdiomaDestino} = useIdioma();
@@ -85,6 +87,7 @@ function handleSelecionar(nome: string, codigo: string) {
 async function traduzir() {
   if (!textoOrigem.trim()) return;
   setCarregando(true);
+  iniciar();
 
   abortRef.current?.abort();
   const controller = new AbortController();
@@ -107,18 +110,22 @@ async function traduzir() {
 
     if (!res.ok) {
       setTextoTraduzido(`Erro: ${data.detail}`);
+      cancelar();
       return;
     }
 
     setTextoTraduzido(data.traducao);
+    concluir();
     registrarIdioma(idiomaOrigem.nome);
     registrarIdioma(idiomaDestino.nome);
   } catch (e) {
     if (e instanceof SessaoExpiradaError) {
       // apiFetch já redireciona pro login; não precisa fazer nada aqui
+      cancelar();
       return;
     }
     setTextoTraduzido("Erro ao traduzir. Tente novamente.");
+    cancelar();
   } finally {
     setCarregando(false);
   }
@@ -203,12 +210,19 @@ useEffect(() => {
           readOnly
           placeholder={
              carregando
-              ? "Traduzindo..."
+              ? `Traduzindo... ${progresso}%`
               : `Seu texto em ${idiomaDestino.nome}`
               }
           rows={6}
           className={`w-full bg-transparent p-4 outline-none resize-none text-sm ${placeholder}`}
         />
+
+        {carregando && (
+          <div className="absolute bottom-0 left-0 w-full h-1.5 bg-black/10">
+           <div className="h-full bg-green-500 transition-all duration-300 ease-out" style={{ width: `${progresso}%` }} />
+          </div>   
+        )}
+
         {!carregando && textoTraduzido && (
           <button
            onClick={() => falarTexto(textoTraduzido, idiomaDestino.codigo, "destino")}

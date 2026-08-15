@@ -5,6 +5,7 @@ import { Link } from "react-router-dom";
 import { useIdioma } from "./context/IdiomaContext";
 import { registrarIdioma } from "./utils/idiomaFavorito";
 import { apiFetch, SessaoExpiradaError } from "./utils/apiFetch";
+import { useProgressoSimulado } from "./hooks/useProgressoSimulado";
 
 
 interface MensagemConversa {
@@ -15,6 +16,7 @@ interface MensagemConversa {
 
 export default function VozTraducao() {
   const { darkMode } = useTheme();
+  const { progresso, iniciar, concluir, cancelar } = useProgressoSimulado();
   const [openModal, setOpenModal] = useState(false);
   const [idiomas, setIdiomas] = useState<Record<string, string>>({});
   const { idiomaOrigem, idiomaDestino, setIdiomaOrigem, setIdiomaDestino } = useIdioma();
@@ -30,13 +32,16 @@ export default function VozTraducao() {
   const [turnoAtual, setTurnoAtual] = useState<1 | 2>(1);
   const conversaRef = useRef<HTMLDivElement>(null);
   const [contadorInicio, setContadorInicio] = useState<number | null>(null);
-  const [mostrarInfoConversa, setMostrarInfoConversa] = useState(false); 
+  const [mostrarInfoConversa, setMostrarInfoConversa] = useState(false);
+  const [progressoSilencio, setProgressoSilencio] = useState(0);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
   const turnoRef = useRef<1 | 2>(1);
   const silenceTimeoutRef = useRef<number | null>(null);
+  const inicioGravacaoRef = useRef<number>(0);
+  const DURACAO_MINIMA_MS = 400; // gravações mais curtas que isso são ignoradas
   
   useEffect(() => {
     fetch("/idiomas_pt.json")
@@ -130,12 +135,21 @@ function handleSelecionar(nome: string, codigo: string) {
       mediaRecorder.onstop = async () => {
         stream.getTracks().forEach(track => track.stop());
         streamRef.current = null;
+
+        const duracao = Date.now() - inicioGravacaoRef.current;
+        if (duracao < DURACAO_MINIMA_MS) {
+          // Gravação muito curta (usuário não chegou a falar): não envia nada
+          setResultado("");
+          return;
+        }
+
         const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" });
         await enviarAudio(audioBlob);
       };
 
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
+      inicioGravacaoRef.current = Date.now();
       setGravando(true);
     } catch (err) {
       console.error(err);
@@ -154,6 +168,7 @@ function handleSelecionar(nome: string, codigo: string) {
   }
 async function enviarAudio(audioBlob: Blob) {
   setCarregando(true);
+  iniciar();
   try {
     const formData = new FormData();
     formData.append("file", audioBlob, "audio.webm");
@@ -167,17 +182,43 @@ async function enviarAudio(audioBlob: Blob) {
 
     const data = await res.json();
 
+    // Backend retorna 400 com esse detail quando o Whisper não
+    // transcreve nenhuma fala no áudio (ver /traduzir-voz em routes.py)
+    const semFala =
+      res.status === 400 &&
+      typeof data.detail === "string" &&
+      data.detail === "Nenhuma fala detectada no áudio";
+
+    if (semFala) {
+      setResultado("");
+      cancelar();
+      return;
+    }
+
     if (!res.ok) {
       setResultado(`Erro: ${data.detail}`);
+      cancelar();
+      return;
+    }
+
+    // Se a transcrição/tradução veio vazia (silêncio), não mostra nada
+    if (!data.traducao || !data.traducao.trim()) {
+      setResultado("");
+      cancelar();
       return;
     }
 
     setResultado(data.traducao);
+    concluir();
     registrarIdioma(idiomaOrigem.nome);
     registrarIdioma(idiomaDestino.nome);
   } catch (e) {
-    if (e instanceof SessaoExpiradaError) return;
+    if (e instanceof SessaoExpiradaError) {
+      cancelar();
+      return;
+    }
     setResultado("Erro ao conectar com o servidor");
+    cancelar();
   } finally {
     setCarregando(false);
   }
@@ -190,6 +231,8 @@ async function enviarAudio(audioBlob: Blob) {
     console.log("INICIOU GRAVACAO CONVERSA");
 
     chunksRef.current = [];
+
+    setProgressoSilencio(0);
 
 if (silenceTimeoutRef.current) {
   clearTimeout(silenceTimeoutRef.current);
@@ -284,6 +327,7 @@ const detectarSilencio = () => {
 
     // reseta silêncio
     silencioAtual = 0;
+    setProgressoSilencio(0);
   }
 
   // começou a falar e agora ficou silencioso
@@ -291,6 +335,8 @@ const detectarSilencio = () => {
     silencioAtual++;
 
     console.log("silencio:", silencioAtual);
+
+    setProgressoSilencio(Math.min(100, Math.round((silencioAtual / MAX_SILENCIO) * 100)));
 
     // ~3 segundos de silêncio
     if (silencioAtual >= MAX_SILENCIO) {
@@ -307,6 +353,7 @@ const detectarSilencio = () => {
         mediaRecorderRef.current.stop();
 
         setGravando(false);
+        setProgressoSilencio(0);
 
         return;
       }
@@ -449,6 +496,7 @@ if (silenceTimeoutRef.current) {
     setCarregando(false);
     setTurnoAtual(1);
     turnoRef.current = 1;
+    setProgressoSilencio(0);
 
   } else {
   modoConversaRef.current = true;
@@ -519,12 +567,21 @@ if (silenceTimeoutRef.current) {
             <div className="flex justify-center mt-4 px-4">
               <div className={`relative rounded-xl border flex flex-col justify-between w-full max-w-md h-56 ${darkMode ? "bg-zinc-700 border-white text-cyan-500" : "bg-zinc-200 border-black"} mb-6`}>
                 <textarea
-                  value={carregando ? "Traduzindo..." : resultado}
+                  value={carregando ? "" : resultado}
                   readOnly
-                  placeholder="Fala da pessoa convertido para texto"
+                  placeholder={
+                    carregando
+                      ? `Traduzindo... ${progresso}%`
+                      : "Fala da pessoa convertido para texto"
+                  }
                   rows={6}
                   className={`w-full bg-transparent p-4 outline-none resize-none text-sm ${placeholder}`}
                 />
+                {carregando && (
+                  <div className="absolute bottom-0 left-0 w-full h-1.5 bg-black/10">
+                    <div className="h-full bg-green-500 transition-all duration-300 ease-out" style={{ width: `${progresso}%` }} />
+                  </div>
+                )}
                 {resultado && !carregando && (
                   <button
                     onClick={() => falarTexto(resultado, idiomaDestino.codigo, "resultado")}
@@ -551,15 +608,28 @@ if (silenceTimeoutRef.current) {
           <div className="flex flex-col items-center px-4 gap-3">
 
             {/* Indicador de turno */}
-            <div className={`text-sm font-semibold px-4 py-1 rounded-full ${darkMode ? "bg-zinc-700" : "bg-gray-200"}`}>
-              {contadorInicio !== null
-                  ? `A tradução vai começar em ${contadorInicio}s...`
-                  : gravando
-                  ? `🎙️ Pessoa ${turnoAtual} falando (${turnoAtual === 1 ? idiomaOrigem.nome : idiomaDestino.nome})`
-                  : carregando
-                  ? `Traduzindo...`
-                  : `Aguardando Pessoa ${turnoAtual}...`
-              }
+            <div className={`flex flex-col items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-full ${darkMode ? "bg-zinc-700" : "bg-gray-200"}`}>
+              <span>
+                {contadorInicio !== null
+                    ? `A tradução vai começar em ${contadorInicio}s...`
+                    : gravando && progressoSilencio > 0
+                    ? `🤫 Pode parar de falar, já captei... (${progressoSilencio}%)`
+                    : gravando
+                    ? `🎙️ Pessoa ${turnoAtual} falando (${turnoAtual === 1 ? idiomaOrigem.nome : idiomaDestino.nome})`
+                    : carregando
+                    ? `Traduzindo...`
+                    : `Aguardando Pessoa ${turnoAtual}...`
+                }
+              </span>
+
+              {gravando && progressoSilencio > 0 && (
+                <div className={`w-32 h-1.5 rounded-full overflow-hidden ${darkMode ? "bg-black/30" : "bg-black/10"}`}>
+                  <div
+                    className="h-full bg-yellow-500 transition-all duration-100 ease-linear"
+                    style={{ width: `${progressoSilencio}%` }}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Lista de mensagens */}

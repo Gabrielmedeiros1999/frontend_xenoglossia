@@ -25,6 +25,8 @@ export default function VozTraducao() {
   const [carregando, setCarregando] = useState(false);
   const [gravando, setGravando] = useState(false);
   const [falando, setFalando] = useState<"resultado" | null>(null);
+  const [sentimento, setSentimento] = useState<"positivo" | "negativo" | "neutro" | null>(null);
+  const [analisandoSentimento, setAnalisandoSentimento] = useState(false);
 
   // Modo conversação
   const [modoConversa, setModoConversa] = useState(false);
@@ -166,9 +168,47 @@ function handleSelecionar(nome: string, codigo: string) {
     streamRef.current = null;
     setGravando(false);
   }
+async function analisarSentimento(texto: string) {
+  if (!texto.trim()) {
+    setSentimento(null);
+    return;
+  }
+
+  setAnalisandoSentimento(true);
+
+  try {
+    const res = await apiFetch("/analisar-sentimento", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texto }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      setSentimento(null);
+      return;
+    }
+
+    if (data.sentimento === "positivo" || data.sentimento === "negativo" || data.sentimento === "neutro") {
+      setSentimento(data.sentimento);
+    } else {
+      setSentimento(null);
+    }
+  } catch (e) {
+    if (e instanceof SessaoExpiradaError) {
+      return;
+    }
+    setSentimento(null);
+  } finally {
+    setAnalisandoSentimento(false);
+  }
+}
+
 async function enviarAudio(audioBlob: Blob) {
   setCarregando(true);
   iniciar();
+  setSentimento(null);
   try {
     const formData = new FormData();
     formData.append("file", audioBlob, "audio.webm");
@@ -212,6 +252,7 @@ async function enviarAudio(audioBlob: Blob) {
     concluir();
     registrarIdioma(idiomaOrigem.nome);
     registrarIdioma(idiomaDestino.nome);
+    analisarSentimento(data.traducao);
   } catch (e) {
     if (e instanceof SessaoExpiradaError) {
       cancelar();
@@ -565,7 +606,29 @@ if (silenceTimeoutRef.current) {
         {!modoConversa && (  
           <>
             <div className="flex justify-center mt-4 px-4">
-              <div className={`relative rounded-xl border flex flex-col justify-between w-full max-w-md h-56 ${darkMode ? "bg-zinc-700 border-white text-cyan-500" : "bg-zinc-200 border-black"} mb-6`}>
+              <div className={`relative rounded-xl border flex flex-col justify-start w-full max-w-md h-56 ${darkMode ? "bg-zinc-700 border-white text-cyan-500" : "bg-zinc-200 border-black"} mb-6`}>
+                {!carregando && !analisandoSentimento && sentimento && (
+                  <div className="flex justify-start px-4 pt-3">
+                    <span
+                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                        sentimento === "positivo"
+                          ? "bg-green-500/20 text-green-600"
+                          : sentimento === "negativo"
+                          ? "bg-red-500/20 text-red-600"
+                          : "bg-gray-500/20 text-gray-600"
+                      }`}
+                      title={
+                        sentimento === "positivo"
+                          ? "Sentimento positivo"
+                          : sentimento === "negativo"
+                          ? "Sentimento negativo"
+                          : "Sentimento neutro"
+                      }
+                    >
+                      {sentimento === "positivo" ? "😊 Positivo" : sentimento === "negativo" ? "😡 Negativo" : "😐 Neutro"}
+                    </span>
+                  </div>
+                )}
                 <textarea
                   value={carregando ? "" : resultado}
                   readOnly

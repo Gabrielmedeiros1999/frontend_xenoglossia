@@ -18,6 +18,8 @@ export default function TextoTraducao() {
   const [textoTraduzido, setTextoTraduzido] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [falando, setFalando] = useState<"origem" | "destino" | null>(null);
+  const [sentimento, setSentimento] = useState<"positivo" | "negativo" | "neutro" | null>(null);
+  const [analisandoSentimento, setAnalisandoSentimento] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
     useEffect(() => {
@@ -84,10 +86,48 @@ function handleSelecionar(nome: string, codigo: string) {
   }
 }
 
+async function analisarSentimento(texto: string) {
+  if (!texto.trim()) {
+    setSentimento(null);
+    return;
+  }
+
+  setAnalisandoSentimento(true);
+
+  try {
+    const res = await apiFetch("/analisar-sentimento", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texto }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      setSentimento(null);
+      return;
+    }
+
+    if (data.sentimento === "positivo" || data.sentimento === "negativo" || data.sentimento === "neutro") {
+      setSentimento(data.sentimento);
+    } else {
+      setSentimento(null);
+    }
+  } catch (e) {
+    if (e instanceof SessaoExpiradaError) {
+      return;
+    }
+    setSentimento(null);
+  } finally {
+    setAnalisandoSentimento(false);
+  }
+}
+
 async function traduzir() {
   if (!textoOrigem.trim()) return;
   setCarregando(true);
   iniciar();
+  setSentimento(null);
 
   abortRef.current?.abort();
   const controller = new AbortController();
@@ -118,6 +158,7 @@ async function traduzir() {
     concluir();
     registrarIdioma(idiomaOrigem.nome);
     registrarIdioma(idiomaDestino.nome);
+    analisarSentimento(data.traducao);
   } catch (e) {
     if (e instanceof SessaoExpiradaError) {
       // apiFetch já redireciona pro login; não precisa fazer nada aqui
@@ -134,6 +175,7 @@ async function traduzir() {
 useEffect(() => {
   if (!textoOrigem.trim()) {
     setTextoTraduzido("");
+    setSentimento(null);
     return;
   }
 
@@ -205,6 +247,29 @@ useEffect(() => {
 
       {/* Área de texto traduzido */}
       <div className={`relative rounded-xl border  ${darkMode ? "bg-zinc-700 border-white" : "bg-zinc-200 border-black"} mb-6`}>
+        {!carregando && !analisandoSentimento && sentimento && (
+          <div className="flex justify-start px-4 pt-3">
+            <span
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                sentimento === "positivo"
+                  ? "bg-green-500/20 text-green-600"
+                  : sentimento === "negativo"
+                  ? "bg-red-500/20 text-red-600"
+                  : "bg-gray-500/20 text-gray-600"
+              }`}
+              title={
+                sentimento === "positivo"
+                  ? "Sentimento positivo"
+                  : sentimento === "negativo"
+                  ? "Sentimento negativo"
+                  : "Sentimento neutro"
+              }
+            >
+              {sentimento === "positivo" ? "😊 Positivo" : sentimento === "negativo" ? "😡 Negativo" : "😐 Neutro"}
+            </span>
+          </div>
+        )}
+
         <textarea
           value={carregando ? "" : textoTraduzido}
           readOnly

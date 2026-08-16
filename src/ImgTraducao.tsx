@@ -24,6 +24,8 @@ export default function ImgTraducao() {
   const [resultado, setResultado] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [falando, setFalando] = useState<"resultado" | null>(null);
+  const [sentimento, setSentimento] = useState<"positivo" | "negativo" | "neutro" | null>(null);
+  const [analisandoSentimento, setAnalisandoSentimento] = useState(false);
   
   const [cameraAtiva, setCameraAtiva] = useState(false);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -66,12 +68,51 @@ export default function ImgTraducao() {
     setImagem(file);
     setPreview(URL.createObjectURL(file));
     setResultado("");
+    setSentimento(null);
     enviarImagemDireto(file);
   }
+
+async function analisarSentimento(texto: string) {
+  if (!texto.trim()) {
+    setSentimento(null);
+    return;
+  }
+
+  setAnalisandoSentimento(true);
+
+  try {
+    const res = await apiFetch("/analisar-sentimento", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texto }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      setSentimento(null);
+      return;
+    }
+
+    if (data.sentimento === "positivo" || data.sentimento === "negativo" || data.sentimento === "neutro") {
+      setSentimento(data.sentimento);
+    } else {
+      setSentimento(null);
+    }
+  } catch (e) {
+    if (e instanceof SessaoExpiradaError) {
+      return;
+    }
+    setSentimento(null);
+  } finally {
+    setAnalisandoSentimento(false);
+  }
+}
 
 async function enviarImagemDireto(file: File) {
   setCarregando(true);
   iniciar();
+  setSentimento(null);
 
   const formData = new FormData();
   formData.append("file", file);
@@ -96,6 +137,7 @@ async function enviarImagemDireto(file: File) {
     concluir();
     registrarIdioma(idiomaOrigem.nome);
     registrarIdioma(idiomaDestino.nome);
+    analisarSentimento(data.traducao);
   } catch (e) {
     if (e instanceof SessaoExpiradaError) {
       cancelar();
@@ -152,6 +194,7 @@ function tirarFoto() {
     setImagem(file);
     setPreview(URL.createObjectURL(blob));
     setResultado("");
+    setSentimento(null);
 
     enviarImagemDireto(file);
   }, "image/jpeg");
@@ -273,6 +316,7 @@ useEffect(() => {
                   setImagem(null); 
                   setPreview(null); 
                   setResultado("");
+                  setSentimento(null);
                   if (inputFileRef.current) {
                    inputFileRef.current.value = "";
                   }
@@ -285,6 +329,29 @@ useEffect(() => {
 
          {/* Área de texto traduzido */}
       <div className={`relative rounded-xl border  ${darkMode ? "bg-zinc-700 border-white" : "bg-zinc-200 border-black"} mb-6`}>
+        {!carregando && !analisandoSentimento && sentimento && (
+          <div className="flex justify-start px-4 pt-3">
+            <span
+              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                sentimento === "positivo"
+                  ? "bg-green-500/20 text-green-600"
+                  : sentimento === "negativo"
+                  ? "bg-red-500/20 text-red-600"
+                  : "bg-gray-500/20 text-gray-600"
+              }`}
+              title={
+                sentimento === "positivo"
+                  ? "Sentimento positivo"
+                  : sentimento === "negativo"
+                  ? "Sentimento negativo"
+                  : "Sentimento neutro"
+              }
+            >
+              {sentimento === "positivo" ? "😊 Positivo" : sentimento === "negativo" ? "😡 Negativo" : "😐 Neutro"}
+            </span>
+          </div>
+        )}
+
         <textarea
           value={resultado}
           readOnly

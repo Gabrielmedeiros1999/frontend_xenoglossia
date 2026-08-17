@@ -12,6 +12,7 @@ interface MensagemConversa {
   pessoa: 1 | 2;
   texto: string;
   traducao: string;
+  sentimento?: "positivo" | "negativo" | "neutro";
 }
 
 export default function VozTraducao() {
@@ -415,6 +416,29 @@ detectarSilencio();
     }
   }
 
+async function analisarSentimentoConversa(texto: string, indice: number) {
+  if (!texto.trim()) return;
+
+  try {
+    const res = await apiFetch("/analisar-sentimento", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ texto }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) return;
+    if (data.sentimento !== "positivo" && data.sentimento !== "negativo" && data.sentimento !== "neutro") return;
+
+    setConversa(prev =>
+      prev.map((msg, i) => (i === indice ? { ...msg, sentimento: data.sentimento } : msg))
+    );
+  } catch (e) {
+    // Falha silenciosa: o sentimento é um extra, não deve travar a conversação.
+  }
+}
+
 async function processarTurno(audioBlob: Blob) {
   if (!modoConversaRef.current) return;
 
@@ -445,7 +469,11 @@ async function processarTurno(audioBlob: Blob) {
       traducao: data.traducao,
     };
 
-    setConversa(prev => [...prev, novaMensagem]);
+    setConversa(prev => {
+      const novaLista = [...prev, novaMensagem];
+      analisarSentimentoConversa(data.traducao, novaLista.length - 1);
+      return novaLista;
+    });
 
     const proximoTurno: 1 | 2 = turno === 1 ? 2 : 1;
     setTurnoAtual(proximoTurno);
@@ -717,6 +745,26 @@ if (silenceTimeoutRef.current) {
                   }`}>
                     <p className="text-xs opacity-70 mb-1">{msg.texto}</p>
                     <p className="font-medium">{msg.traducao}</p>
+                    {msg.sentimento && (
+                      <span
+                        className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/90 ${
+                          msg.sentimento === "positivo"
+                            ? "text-green-700"
+                            : msg.sentimento === "negativo"
+                            ? "text-red-700"
+                            : "text-gray-700"
+                        }`}
+                        title={
+                          msg.sentimento === "positivo"
+                            ? "Sentimento positivo"
+                            : msg.sentimento === "negativo"
+                            ? "Sentimento negativo"
+                            : "Sentimento neutro"
+                        }
+                      >
+                        {msg.sentimento === "positivo" ? "😊 Positivo" : msg.sentimento === "negativo" ? "😡 Negativo" : "😐 Neutro"}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}

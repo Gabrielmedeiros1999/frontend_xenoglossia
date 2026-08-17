@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useState, useEffect, useMemo } from "react";
 import TraducaoCard from "./TraducaoCard";
 import { useHistorico } from "../context/HistoricoContext";
+import { apiFetch, SessaoExpiradaError } from "../utils/apiFetch";
 
 type MenuProps = {
   isOpen: boolean;
@@ -25,6 +26,44 @@ export default function Menu({ isOpen, onClose }: MenuProps) {
   );
 
   const ultimaTraducao = historico[0];
+
+  const LABEL_MODO: Record<string, string> = {
+    texto: "Texto",
+    imagem: "Imagem",
+    voz: "Voz",
+  };
+
+  const ICONE_MODO: Record<string, string> = {
+    texto: "📝",
+    imagem: "🖼️",
+    voz: "🎤",
+  };
+
+  const [estatisticasHoje, setEstatisticasHoje] = useState<{ total: number; modalidades: string[] } | null>(null);
+  const [carregandoEstatisticas, setCarregandoEstatisticas] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen || !usuario) return;
+
+    async function buscarEstatisticasHoje() {
+      setCarregandoEstatisticas(true);
+      try {
+        const res = await apiFetch("/estatisticas/hoje");
+        const data = await res.json();
+        if (res.ok) {
+          setEstatisticasHoje(data);
+        }
+      } catch (e) {
+        if (!(e instanceof SessaoExpiradaError)) {
+          console.error("Erro ao carregar estatísticas do dia");
+        }
+      } finally {
+        setCarregandoEstatisticas(false);
+      }
+    }
+
+    buscarEstatisticasHoje();
+  }, [isOpen, usuario]);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -187,6 +226,52 @@ ${item.traducao}
               </>
             )}
           </div>
+
+          {/* ATIVIDADE DE HOJE */}
+          {usuario && (
+            <div className="border rounded-md p-4 text-center mb-4">
+              <p className="mb-2 font-bold">Atividade de hoje</p>
+
+              {carregandoEstatisticas ? (
+                <div className="flex flex-col items-center justify-center gap-2 py-2">
+                  <p className="text-sm italic">Carregando...</p>
+                  <div
+                    className={`w-6 h-6 border-4 rounded-full animate-spin ${
+                      darkMode
+                        ? "border-gray-500 border-t-green-500"
+                        : "border-gray-300 border-t-blue-600"
+                    }`}
+                  />
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm mb-2">
+                    <span className="font-bold">{estatisticasHoje?.total ?? 0}</span>{" "}
+                    {(estatisticasHoje?.total ?? 0) === 1 ? "tradução realizada" : "traduções realizadas"}
+                  </p>
+
+                  {estatisticasHoje && estatisticasHoje.modalidades.length > 0 ? (
+                    <div className="flex justify-center flex-wrap gap-2">
+                      {estatisticasHoje.modalidades.map((modo) => (
+                        <span
+                          key={modo}
+                          className={`text-xs font-medium px-2 py-1 rounded-full ${
+                            darkMode ? "bg-zinc-700 text-cyan-400" : "bg-gray-100 text-gray-700"
+                          }`}
+                        >
+                          {ICONE_MODO[modo] ?? "🌐"} {LABEL_MODO[modo] ?? modo}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className={`text-xs italic ${darkMode ? "text-gray-400" : "text-gray-500"}`}>
+                      Nenhuma tradução hoje ainda.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
 
           {/* LINGUAGEM */}
           <div className="border rounded-md p-4 text-center mb-4">

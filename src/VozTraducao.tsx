@@ -857,6 +857,7 @@ if (silenceTimeoutRef.current) {
             <img src={darkMode ? "/Component 2-dark.png" : "/Component 2.png"} className="h-10" />
           </Link>
           <img src={darkMode ? "/Component 1-select-dark.png" : "/Component 1-select.png"} className="h-10" />
+          <Link to='/docTraducao'><img src={darkMode ? "/Component 19-dark.png" : "/Component 19.png"} className="h-10" /></Link>
         </div>
       </div>
 

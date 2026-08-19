@@ -17,6 +17,7 @@ import Cadastro from './Cadastro.tsx'
 import Perfil from './Perfil.tsx'
 import AlterarSenha from './AlteraSenha.tsx'
 import Historico from './components/Historico.tsx'
+import DocTraducao from './Doctraducao.tsx'
 
 const rotas = createBrowserRouter([
   {
@@ -27,6 +28,7 @@ const rotas = createBrowserRouter([
       { path: 'textoTraducao', element: <TextoTraducao />},
       { path: 'imgTraducao', element: <ImgTraducao/>},
       { path: 'vozTraducao', element: <VozTraducao/>},
+      { path: 'docTraducao', element: <DocTraducao/>},
     ],
   },
   {

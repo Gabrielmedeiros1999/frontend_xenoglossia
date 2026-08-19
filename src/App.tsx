@@ -92,6 +92,7 @@ function App() {
           <Link to='/textoTraducao'><img src={darkMode ? "/Component 3-dark.png" : "/Component 3.png"} className="h-10" /></Link>
           <Link to='/imgTraducao'><img src={darkMode ? "/Component 2-dark.png" : "/Component 2.png"} className="h-10" /></Link>
           <Link to='/vozTraducao'><img src={darkMode ? "/Component 1-dark.png" : "/Component 1.png"} className="h-10" /></Link>
+          <Link to='/docTraducao'><img src={darkMode ? "/Component 19-dark.png" : "/Component 19.png"} className="h-10" /></Link>
         </div>
       </div>
 

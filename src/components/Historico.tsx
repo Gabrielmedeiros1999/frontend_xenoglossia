@@ -140,9 +140,7 @@ export default function Historico() {
                             <button
                                 onClick={() => setMostrarModalApagarTudo(true)}
                                 disabled={apagandoTudo}
-                                className={`text-xs font-semibold underline cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
-                                    darkMode ? "text-red-400" : "text-red-600"
-                                }`}
+                                className={`text-xs font-semibold rounded-md p-2  cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-white bg-red-600`}
                             >
                                 Apagar tudo
                             </button>

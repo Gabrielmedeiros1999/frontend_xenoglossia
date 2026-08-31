@@ -1,147 +1,164 @@
-import { useState, useRef, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "./context/ThemeContext";
-import { ModalIdiomas } from "./components/ModalIdiomas";
-import { Link } from "react-router-dom";
 import { useIdioma } from "./context/IdiomaContext";
 import { registrarIdioma } from "./utils/idiomaFavorito";
 import { apiFetch, SessaoExpiradaError } from "./utils/apiFetch";
 import { useProgressoSimulado } from "./hooks/useProgressoSimulado";
-
+import { useSentimento, buscarSentimento, type Sentimento } from "./hooks/useSentimento";
+import { useFalarTexto } from "./hooks/useFalarTexto";
+import { criarUtterance, falarUtterance } from "./utils/tts";
+import { SeletorIdiomasBar } from "./components/SeletorIdiomasBar";
+import { CaixaResultadoTraducao } from "./components/CaixaResultadoTraducao";
+import { SentimentoBadge } from "./components/SentimentoBadge";
+import { NavegacaoTraducao } from "./components/NavegacaoTraducao";
 
 interface MensagemConversa {
   pessoa: 1 | 2;
   texto: string;
   traducao: string;
-  sentimento?: "positivo" | "negativo" | "neutro";
+  sentimento?: Sentimento;
 }
+
+// Gravações mais curtas que isso (modo normal) são ignoradas — o usuário
+// provavelmente só encostou no botão sem chegar a falar.
+const DURACAO_MINIMA_MS = 400;
+
+// Parâmetros da detecção de silêncio do modo conversação.
+const LIMITE_VOLUME = 0.02;
+const MAX_CICLOS_SILENCIO = 30; // ~3s de silêncio (30 ciclos de 100ms) encerra o turno
+const INTERVALO_DETECCAO_MS = 100;
+const SEGUNDOS_CONTAGEM_INICIAL = 5;
 
 export default function VozTraducao() {
   const { darkMode } = useTheme();
   const { progresso, iniciar, concluir, cancelar } = useProgressoSimulado();
-  const [openModal, setOpenModal] = useState(false);
-  const [idiomas, setIdiomas] = useState<Record<string, string>>({});
-  const { idiomaOrigem, idiomaDestino, setIdiomaOrigem, setIdiomaDestino } = useIdioma();
-  const [tipoSelecao, setTipoSelecao] = useState<"origem" | "destino">("origem");
+  const { idiomaOrigem, idiomaDestino } = useIdioma();
+
+  // ── Modo normal (uma gravação por vez) ────────────────────────────────────
   const [resultado, setResultado] = useState("");
   const [carregando, setCarregando] = useState(false);
   const [gravando, setGravando] = useState(false);
-  const [falando, setFalando] = useState<"resultado" | null>(null);
-  const [sentimento, setSentimento] = useState<"positivo" | "negativo" | "neutro" | null>(null);
-  const [analisandoSentimento, setAnalisandoSentimento] = useState(false);
+  const { falando, falar } = useFalarTexto<"resultado">();
+  const { sentimento, analisando, analisar, limpar: limparSentimento } = useSentimento();
 
-  // Modo conversação
+  // ── Modo conversação ───────────────────────────────────────────────────────
   const [modoConversa, setModoConversa] = useState(false);
   const [conversa, setConversa] = useState<MensagemConversa[]>([]);
   const [turnoAtual, setTurnoAtual] = useState<1 | 2>(1);
-  const conversaRef = useRef<HTMLDivElement>(null);
   const [contadorInicio, setContadorInicio] = useState<number | null>(null);
   const [mostrarInfoConversa, setMostrarInfoConversa] = useState(false);
   const [progressoSilencio, setProgressoSilencio] = useState(0);
+  const conversaRef = useRef<HTMLDivElement>(null);
+  const modoConversaRef = useRef(false);
+  const turnoRef = useRef<1 | 2>(1);
 
+  // Refs compartilhadas de gravação (usadas tanto no modo normal quanto na conversação)
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
-  const turnoRef = useRef<1 | 2>(1);
-  const silenceTimeoutRef = useRef<number | null>(null);
   const inicioGravacaoRef = useRef<number>(0);
-  const DURACAO_MINIMA_MS = 400; // gravações mais curtas que isso são ignoradas
-  
-  useEffect(() => {
-    fetch("/idiomas_pt.json")
-      .then(res => res.json())
-      .then(data => setIdiomas(data))
-      .catch(() => console.error("Erro ao carregar idiomas"));
-  }, []);
 
-  // Scroll automático na conversa
+  // Scroll automático da lista de mensagens da conversa
   useEffect(() => {
     if (conversaRef.current) {
       conversaRef.current.scrollTop = conversaRef.current.scrollHeight;
     }
   }, [conversa]);
 
-  // Mantém o ref sincronizado com o estado
+  // Mantém o ref sincronizado com o estado (necessário pois callbacks assíncronos
+  // de MediaRecorder/AudioContext leem o valor "ao vivo", não o valor da closure)
   useEffect(() => {
     turnoRef.current = turnoAtual;
   }, [turnoAtual]);
 
-  async function abrirModal(tipo: "origem" | "destino") {
-    setTipoSelecao(tipo);
-    setOpenModal(true);
-  }
-
-function handleSelecionar(nome: string, codigo: string) {
-  const idioma = { nome, codigo };
-
-  if (tipoSelecao === "origem") {
-    if(codigo === idiomaDestino.codigo) {
-      setIdiomaDestino(idiomaOrigem);
-    }
-    setIdiomaOrigem(idioma);
-  } else {
-    if(codigo === idiomaOrigem.codigo){
-      setIdiomaOrigem(idiomaDestino);
-    }
-    setIdiomaDestino(idioma);
-  }
-}
-
-  function falarTexto(texto: string, idioma: string, campo: "resultado") {
-    if (!texto) return;
-
-    // Clicou de novo enquanto fala: para a fala
-    if (falando === campo) {
-      speechSynthesis.cancel();
-      setFalando(null);
-      return;
-    }
-
-    const utterance = new SpeechSynthesisUtterance(texto);
-    utterance.lang = idioma;
-    utterance.volume = 1;
-    utterance.rate = 1;
-    utterance.pitch = 1;
-
-    utterance.onstart = () => setFalando(campo);
-    utterance.onend = () => setFalando(null);
-    utterance.onerror = () => setFalando(null);
-
-    speechSynthesis.cancel();
-    const falar = () => {
-      const vozes = speechSynthesis.getVoices();
-      const vozIdioma = vozes.find(v => v.lang.startsWith(idioma));
-      if (vozIdioma) utterance.voice = vozIdioma;
-      speechSynthesis.speak(utterance);
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      modoConversaRef.current = false;
     };
-    if (speechSynthesis.getVoices().length > 0) falar();
-    else speechSynthesis.addEventListener("voiceschanged", falar, { once: true });
-  }
+  }, []);
 
-  // ── Gravação normal ──────────────────────────────────────────────────────────
+  // ── Gravação modo normal ───────────────────────────────────────────────────
+
+  async function enviarAudio(audioBlob: Blob) {
+    setCarregando(true);
+    iniciar();
+    limparSentimento();
+    try {
+      const formData = new FormData();
+      formData.append("file", audioBlob, "audio.webm");
+      formData.append("origem", idiomaOrigem.codigo);
+      formData.append("destino", idiomaDestino.codigo);
+
+      const res = await apiFetch("/traduzir-voz", {
+        method: "POST",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      // Backend retorna 400 com esse detail quando o Whisper não
+      // transcreve nenhuma fala no áudio (ver /traduzir-voz em routes.py)
+      const semFala =
+        res.status === 400 &&
+        typeof data.detail === "string" &&
+        data.detail === "Nenhuma fala detectada no áudio";
+
+      if (semFala) {
+        setResultado("");
+        cancelar();
+        return;
+      }
+
+      if (!res.ok) {
+        setResultado(`Erro: ${data.detail}`);
+        cancelar();
+        return;
+      }
+
+      // Transcrição/tradução veio vazia (silêncio): não mostra nada
+      if (!data.traducao || !data.traducao.trim()) {
+        setResultado("");
+        cancelar();
+        return;
+      }
+
+      setResultado(data.traducao);
+      concluir();
+      registrarIdioma(idiomaOrigem.nome);
+      registrarIdioma(idiomaDestino.nome);
+      analisar(data.traducao);
+    } catch (e) {
+      if (e instanceof SessaoExpiradaError) {
+        cancelar();
+        return;
+      }
+      setResultado("Erro ao conectar com o servidor");
+      cancelar();
+    } finally {
+      setCarregando(false);
+    }
+  }
 
   async function iniciarGravacao() {
     if (gravando) return;
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      
+
       const mediaRecorder = new MediaRecorder(stream);
       chunksRef.current = [];
 
       mediaRecorder.ondataavailable = (e) => {
-          
-        console.log("chunk recebido:", e.data.size);
-
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
 
       mediaRecorder.onstop = async () => {
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
 
         const duracao = Date.now() - inicioGravacaoRef.current;
         if (duracao < DURACAO_MINIMA_MS) {
-          // Gravação muito curta (usuário não chegou a falar): não envia nada
           setResultado("");
           return;
         }
@@ -163,148 +180,42 @@ function handleSelecionar(nome: string, codigo: string) {
   function pararGravacao() {
     if (mediaRecorderRef.current && gravando) {
       mediaRecorderRef.current.stop();
-      setGravando(false);
     }
-    streamRef.current?.getTracks().forEach(track => track.stop());
+    streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
     setGravando(false);
   }
-async function analisarSentimento(texto: string) {
-  if (!texto.trim()) {
-    setSentimento(null);
-    return;
+
+  // ── Modo conversação ───────────────────────────────────────────────────────
+
+  async function analisarSentimentoConversa(texto: string, indice: number) {
+    const resultado = await buscarSentimento(texto);
+    if (!resultado) return;
+
+    setConversa((prev) => prev.map((msg, i) => (i === indice ? { ...msg, sentimento: resultado } : msg)));
   }
-
-  setAnalisandoSentimento(true);
-
-  try {
-    const res = await apiFetch("/analisar-sentimento", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texto }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      setSentimento(null);
-      return;
-    }
-
-    if (data.sentimento === "positivo" || data.sentimento === "negativo" || data.sentimento === "neutro") {
-      setSentimento(data.sentimento);
-    } else {
-      setSentimento(null);
-    }
-  } catch (e) {
-    if (e instanceof SessaoExpiradaError) {
-      return;
-    }
-    setSentimento(null);
-  } finally {
-    setAnalisandoSentimento(false);
-  }
-}
-
-async function enviarAudio(audioBlob: Blob) {
-  setCarregando(true);
-  iniciar();
-  setSentimento(null);
-  try {
-    const formData = new FormData();
-    formData.append("file", audioBlob, "audio.webm");
-    formData.append("origem", idiomaOrigem.codigo);
-    formData.append("destino", idiomaDestino.codigo);
-
-    const res = await apiFetch("/traduzir-voz", {
-      method: "POST",
-      body: formData,
-    });
-
-    const data = await res.json();
-
-    // Backend retorna 400 com esse detail quando o Whisper não
-    // transcreve nenhuma fala no áudio (ver /traduzir-voz em routes.py)
-    const semFala =
-      res.status === 400 &&
-      typeof data.detail === "string" &&
-      data.detail === "Nenhuma fala detectada no áudio";
-
-    if (semFala) {
-      setResultado("");
-      cancelar();
-      return;
-    }
-
-    if (!res.ok) {
-      setResultado(`Erro: ${data.detail}`);
-      cancelar();
-      return;
-    }
-
-    // Se a transcrição/tradução veio vazia (silêncio), não mostra nada
-    if (!data.traducao || !data.traducao.trim()) {
-      setResultado("");
-      cancelar();
-      return;
-    }
-
-    setResultado(data.traducao);
-    concluir();
-    registrarIdioma(idiomaOrigem.nome);
-    registrarIdioma(idiomaDestino.nome);
-    analisarSentimento(data.traducao);
-  } catch (e) {
-    if (e instanceof SessaoExpiradaError) {
-      cancelar();
-      return;
-    }
-    setResultado("Erro ao conectar com o servidor");
-    cancelar();
-  } finally {
-    setCarregando(false);
-  }
-}
-
-  // ── Modo Conversação ─────────────────────────────────────────────────────────
 
   async function iniciarGravacaoConversa() {
-
-    console.log("INICIOU GRAVACAO CONVERSA");
+    if (!modoConversaRef.current) return;
 
     chunksRef.current = [];
-
     setProgressoSilencio(0);
 
-if (silenceTimeoutRef.current) {
-  clearTimeout(silenceTimeoutRef.current);
-  silenceTimeoutRef.current = null;
-}
-
-    if (!modoConversaRef.current) return;
-    
     try {
-      console.log("PEDINDO MICROFONE");
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
-      console.log("MICROFONE OK");
+
       const mediaRecorder = new MediaRecorder(stream);
       chunksRef.current = [];
 
-mediaRecorder.ondataavailable = (e) => {
-  if (e.data && e.data.size > 0) {
-    chunksRef.current.push(e.data);
-  }
-};
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunksRef.current.push(e.data);
+      };
 
       mediaRecorder.onstop = async () => {
-
-        console.log("ONSTOP EXECUTOU");
-        console.log("chunks:", chunksRef.current.length);
-
-        stream.getTracks().forEach(track => track.stop());
+        stream.getTracks().forEach((track) => track.stop());
         streamRef.current = null;
-        
+
         if (!modoConversaRef.current) return;
 
         const audioBlob = new Blob(chunksRef.current, { type: "audio/webm" });
@@ -314,403 +225,238 @@ mediaRecorder.ondataavailable = (e) => {
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
       setGravando(true);
-      
-const audioContext = new AudioContext();
 
-const source = audioContext.createMediaStreamSource(stream);
-
-const analyser = audioContext.createAnalyser();
-
-source.connect(analyser);
-
-analyser.fftSize = 2048;
-
-const dataArray = new Uint8Array(analyser.fftSize);
-
-let gravacaoFinalizada = false;
-let pessoaComecouFalar = false;
-
-const LIMITE_VOLUME = 0.02;
-
-
-// quantidade de loops silenciosos necessários
-const MAX_SILENCIO = 30;
-
-// contador
-let silencioAtual = 0;
-
-let detectorAtivo = true;
-
-const detectarSilencio = () => {
-  if (!modoConversaRef.current || gravacaoFinalizada) return;
-
-  analyser.getByteTimeDomainData(dataArray);
-
-  let soma = 0;
-
-  for (let i = 0; i < dataArray.length; i++) {
-    const valor = (dataArray[i] - 128) / 128;
-    soma += valor * valor;
-  }
-
-  const volume = Math.sqrt(soma / dataArray.length);
-
-  console.log({
-  volume,
-  pessoaComecouFalar,
-  silencioAtual
-});
-
-  console.log("volume:", volume);
-
-  // detectou fala
-  if (volume > LIMITE_VOLUME) {
-    pessoaComecouFalar = true;
-
-    // reseta silêncio
-    silencioAtual = 0;
-    setProgressoSilencio(0);
-  }
-
-  // começou a falar e agora ficou silencioso
-  else if (pessoaComecouFalar) {
-    silencioAtual++;
-
-    console.log("silencio:", silencioAtual);
-
-    setProgressoSilencio(Math.min(100, Math.round((silencioAtual / MAX_SILENCIO) * 100)));
-
-    // ~3 segundos de silêncio
-    if (silencioAtual >= MAX_SILENCIO) {
-      if (
-        mediaRecorderRef.current &&
-        mediaRecorderRef.current.state === "recording"
-      ) {
-        gravacaoFinalizada = true;
-         
-        detectorAtivo = false;
-
-        console.log("CHAMANDO STOP");
-
-        mediaRecorderRef.current.stop();
-
-        setGravando(false);
-        setProgressoSilencio(0);
-
-        return;
-      }
-    }
-  }
-  
-  if (detectorAtivo) {
-  setTimeout(detectarSilencio, 100);
-  }
-};
-
-
-
-detectarSilencio();
-     
+      iniciarDetectorDeSilencio(stream);
     } catch (err) {
       console.error(err);
     }
   }
 
-async function analisarSentimentoConversa(texto: string, indice: number) {
-  if (!texto.trim()) return;
+  /**
+   * Monitora o volume do microfone e encerra a gravação automaticamente
+   * depois que a pessoa fala e some ~3s de silêncio.
+   */
+  function iniciarDetectorDeSilencio(stream: MediaStream) {
+    const audioContext = new AudioContext();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    source.connect(analyser);
+    analyser.fftSize = 2048;
 
-  try {
-    const res = await apiFetch("/analisar-sentimento", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texto }),
-    });
+    const dataArray = new Uint8Array(analyser.fftSize);
 
-    const data = await res.json();
+    let gravacaoFinalizada = false;
+    let pessoaComecouFalar = false;
+    let silencioAtual = 0;
+    let detectorAtivo = true;
 
-    if (!res.ok) return;
-    if (data.sentimento !== "positivo" && data.sentimento !== "negativo" && data.sentimento !== "neutro") return;
+    const detectar = () => {
+      if (!modoConversaRef.current || gravacaoFinalizada) return;
 
-    setConversa(prev =>
-      prev.map((msg, i) => (i === indice ? { ...msg, sentimento: data.sentimento } : msg))
-    );
-  } catch (e) {
-    // Falha silenciosa: o sentimento é um extra, não deve travar a conversação.
+      analyser.getByteTimeDomainData(dataArray);
+
+      let somaQuadrados = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        const valor = (dataArray[i] - 128) / 128;
+        somaQuadrados += valor * valor;
+      }
+      const volume = Math.sqrt(somaQuadrados / dataArray.length);
+
+      if (volume > LIMITE_VOLUME) {
+        // Detectou fala: reseta a contagem de silêncio.
+        pessoaComecouFalar = true;
+        silencioAtual = 0;
+        setProgressoSilencio(0);
+      } else if (pessoaComecouFalar) {
+        // Já tinha falado e agora está em silêncio: conta os ciclos.
+        silencioAtual++;
+        setProgressoSilencio(Math.min(100, Math.round((silencioAtual / MAX_CICLOS_SILENCIO) * 100)));
+
+        if (silencioAtual >= MAX_CICLOS_SILENCIO) {
+          if (mediaRecorderRef.current?.state === "recording") {
+            gravacaoFinalizada = true;
+            detectorAtivo = false;
+            mediaRecorderRef.current.stop();
+            setGravando(false);
+            setProgressoSilencio(0);
+            return;
+          }
+        }
+      }
+
+      if (detectorAtivo) setTimeout(detectar, INTERVALO_DETECCAO_MS);
+    };
+
+    detectar();
   }
-}
 
-async function processarTurno(audioBlob: Blob) {
-  if (!modoConversaRef.current) return;
-
-  setCarregando(true);
-  const turno = turnoRef.current;
-  const origemTurno = turno === 1 ? idiomaOrigem.codigo : idiomaDestino.codigo;
-  const destinoTurno = turno === 1 ? idiomaDestino.codigo : idiomaOrigem.codigo;
-
-  try {
-    const formData = new FormData();
-    formData.append("file", audioBlob, "audio.webm");
-    formData.append("origem", origemTurno);
-    formData.append("destino", destinoTurno);
-
-    const res = await apiFetch("/traduzir-voz", {
-      method: "POST",
-      body: formData,
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) return;
+  async function processarTurno(audioBlob: Blob) {
     if (!modoConversaRef.current) return;
 
-    const novaMensagem: MensagemConversa = {
-      pessoa: turno,
-      texto: data.texto_transcrito || "",
-      traducao: data.traducao,
-    };
+    setCarregando(true);
+    const turno = turnoRef.current;
+    const origemTurno = turno === 1 ? idiomaOrigem.codigo : idiomaDestino.codigo;
+    const destinoTurno = turno === 1 ? idiomaDestino.codigo : idiomaOrigem.codigo;
 
-    setConversa(prev => {
-      const novaLista = [...prev, novaMensagem];
-      analisarSentimentoConversa(data.traducao, novaLista.length - 1);
-      return novaLista;
-    });
+    try {
+      const formData = new FormData();
+      formData.append("file", audioBlob, "audio.webm");
+      formData.append("origem", origemTurno);
+      formData.append("destino", destinoTurno);
 
-    const proximoTurno: 1 | 2 = turno === 1 ? 2 : 1;
-    setTurnoAtual(proximoTurno);
-    turnoRef.current = proximoTurno;
+      const res = await apiFetch("/traduzir-voz", {
+        method: "POST",
+        body: formData,
+      });
 
-    let proximoTurnoIniciado = false;
+      const data = await res.json();
 
-    const iniciarProximoTurno = () => {
-      if (modoConversaRef.current && !proximoTurnoIniciado) {
-        proximoTurnoIniciado = true;
-        iniciarGravacaoConversa();
+      if (!res.ok) return;
+      if (!modoConversaRef.current) return;
+
+      const novaMensagem: MensagemConversa = {
+        pessoa: turno,
+        texto: data.texto_transcrito || "",
+        traducao: data.traducao,
+      };
+
+      setConversa((prev) => {
+        const novaLista = [...prev, novaMensagem];
+        analisarSentimentoConversa(data.traducao, novaLista.length - 1);
+        return novaLista;
+      });
+
+      const proximoTurno: 1 | 2 = turno === 1 ? 2 : 1;
+      setTurnoAtual(proximoTurno);
+      turnoRef.current = proximoTurno;
+
+      // Fala a tradução e, assim que terminar (ou depois de um tempo limite de
+      // segurança, caso o evento `onend` nunca dispare), inicia o próximo turno.
+      let proximoTurnoIniciado = false;
+      const iniciarProximoTurno = () => {
+        if (modoConversaRef.current && !proximoTurnoIniciado) {
+          proximoTurnoIniciado = true;
+          iniciarGravacaoConversa();
+        }
+      };
+
+      const utterance = criarUtterance(data.traducao, destinoTurno);
+      const fallbackTimeout = setTimeout(iniciarProximoTurno, 1500);
+      utterance.onend = () => {
+        clearTimeout(fallbackTimeout);
+        iniciarProximoTurno();
+      };
+
+      falarUtterance(utterance, destinoTurno);
+    } catch (e) {
+      if (e instanceof SessaoExpiradaError) {
+        // Sessão caiu: encerra o modo conversação.
+        modoConversaRef.current = false;
+        setModoConversa(false);
+        setGravando(false);
+        return;
       }
-    };
-
-    const utterance = new SpeechSynthesisUtterance(data.traducao);
-    utterance.lang = destinoTurno;
-    utterance.volume = 1;
-    utterance.rate = 1;
-    utterance.pitch = 1;
-
-    speechSynthesis.cancel();
-
-    const falar = () => {
-      const vozes = speechSynthesis.getVoices();
-      const vozIdioma = vozes.find(v => v.lang.startsWith(destinoTurno));
-      if (vozIdioma) utterance.voice = vozIdioma;
-      speechSynthesis.speak(utterance);
-    };
-
-    if (speechSynthesis.getVoices().length > 0) falar();
-    else speechSynthesis.addEventListener("voiceschanged", falar, { once: true });
-
-    const fallbackTimeout = setTimeout(() => {
-      iniciarProximoTurno();
-    }, 1500);
-
-    utterance.onend = () => {
-      clearTimeout(fallbackTimeout);
-      iniciarProximoTurno();
-    };
-  } catch (e) {
-    if (e instanceof SessaoExpiradaError) {
-      // encerra o modo conversação, já que a sessão caiu
-      modoConversaRef.current = false;
-      setModoConversa(false);
-      setGravando(false);
-      return;
+      console.error("Erro no turno de conversação");
+    } finally {
+      setCarregando(false);
     }
-    console.error("Erro no turno de conversação");
-  } finally {
-    setCarregando(false);
   }
-}
 
-  const modoConversaRef = useRef(false);
-
-function toggleModoConversa() {
-  if (modoConversa) {
-    // Desativa o ref PRIMEIRO — impede qualquer callback de continuar
+  function pararModoConversa() {
+    // Desativa o ref PRIMEIRO — impede qualquer callback pendente de continuar
     modoConversaRef.current = false;
-
-    // Cancela a fala imediatamente
     speechSynthesis.cancel();
 
-    // Para o stream do microfone diretamente (mais confiável que parar o MediaRecorder)
-    streamRef.current?.getTracks().forEach(track => track.stop());
+    // Para o stream do microfone diretamente (mais confiável que só parar o MediaRecorder)
+    streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
 
-    // Para o MediaRecorder com segurança
     try {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-        mediaRecorderRef.current.ondataavailable = null; // ← ignora dados pendentes
-        mediaRecorderRef.current.onstop = null;         // ← ignora o onstop
+        mediaRecorderRef.current.ondataavailable = null; // ignora dados pendentes
+        mediaRecorderRef.current.onstop = null; // ignora o onstop
         mediaRecorderRef.current.stop();
       }
     } catch (err) {
       console.error("Erro ao parar gravação:", err);
     }
-
-if (silenceTimeoutRef.current) {
-  clearTimeout(silenceTimeoutRef.current);
-}
-
     mediaRecorderRef.current = null;
 
-    // Reseta estados
     setModoConversa(false);
     setGravando(false);
     setCarregando(false);
     setTurnoAtual(1);
     turnoRef.current = 1;
     setProgressoSilencio(0);
+  }
 
-  } else {
-  modoConversaRef.current = true;
+  function iniciarModoConversa() {
+    modoConversaRef.current = true;
+    setModoConversa(true);
+    setConversa([]);
+    setTurnoAtual(1);
+    turnoRef.current = 1;
 
-  setModoConversa(true);
-  setConversa([]);
+    let segundosRestantes = SEGUNDOS_CONTAGEM_INICIAL;
+    setContadorInicio(segundosRestantes);
 
-  setTurnoAtual(1);
-  turnoRef.current = 1;
+    const intervalo = setInterval(() => {
+      segundosRestantes--;
 
-  let tempo = 5;
-
-  setContadorInicio(tempo);
-
-  const intervalo = setInterval(() => {
-    tempo--;
-
-    if (tempo > 0) {
-      setContadorInicio(tempo);
-    } else {
-      clearInterval(intervalo);
-
-      setContadorInicio(null);
-
-      if (modoConversaRef.current) {
-        iniciarGravacaoConversa();
+      if (segundosRestantes > 0) {
+        setContadorInicio(segundosRestantes);
+        return;
       }
-    }
-  }, 1000);
-}
-}
 
-  useEffect(() => {
-    return () => {
-      streamRef.current?.getTracks().forEach(track => track.stop());
-      modoConversaRef.current = false;
-    };
-  }, []);
+      clearInterval(intervalo);
+      setContadorInicio(null);
+      if (modoConversaRef.current) iniciarGravacaoConversa();
+    }, 1000);
+  }
 
-  const placeholder = darkMode ? "placeholder:text-cyan-500" : "placeholder:text-gray-500";
+  function toggleModoConversa() {
+    if (modoConversa) pararModoConversa();
+    else iniciarModoConversa();
+  }
 
   return (
     <div className={`flex flex-col min-h-screen ${darkMode ? "bg-[#0F172A] text-white" : "bg-gray-50 text-gray-800"}`}>
       <div className="flex flex-col gap-0 mt-1">
-
-        {/* Idiomas */}
-        <div className="flex gap-3 justify-center mt-4 mb-4">
-          <button
-            onClick={() => abrirModal("origem")}
-            className={`h-8 px-4 py-1 rounded-md text-sm border cursor-pointer border-black ${darkMode ? "bg-green-500 text-black" : "bg-blue-500 text-white"}`}
-          >
-            {idiomaOrigem.nome}
-          </button>
-          <img src={darkMode ? "/typcn_arrow-up-outline-dark.png" : "/typcn_arrow-up-outline.png"} alt="seta" />
-          <button
-            onClick={() => abrirModal("destino")}
-            className={`h-8 px-4 py-1 rounded-md text-sm border cursor-pointer border-black ${darkMode ? "bg-green-500 text-black" : "bg-blue-500 text-white"}`}
-          >
-            {idiomaDestino.nome}
-          </button>
-        </div>
-        
-       
+        <SeletorIdiomasBar className="mt-4 mb-4" />
 
         {/* Modo normal */}
-        {!modoConversa && (  
-          <>
-            <div className="flex justify-center mt-4 px-4">
-              <div className={`relative rounded-xl border flex flex-col justify-start w-full max-w-md h-56 ${darkMode ? "bg-zinc-700 border-white text-cyan-500" : "bg-zinc-200 border-black"} mb-6`}>
-                {!carregando && !analisandoSentimento && sentimento && (
-                  <div className="flex justify-start px-4 pt-3">
-                    <span
-                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                        sentimento === "positivo"
-                          ? "bg-green-500/20 text-green-600"
-                          : sentimento === "negativo"
-                          ? "bg-red-500/20 text-red-600"
-                          : "bg-gray-500/20 text-gray-600"
-                      }`}
-                      title={
-                        sentimento === "positivo"
-                          ? "Sentimento positivo"
-                          : sentimento === "negativo"
-                          ? "Sentimento negativo"
-                          : "Sentimento neutro"
-                      }
-                    >
-                      {sentimento === "positivo" ? "😊 Positivo" : sentimento === "negativo" ? "😡 Negativo" : "😐 Neutro"}
-                    </span>
-                  </div>
-                )}
-                <textarea
-                  value={carregando ? "" : resultado}
-                  readOnly
-                  placeholder={
-                    carregando
-                      ? `Traduzindo... ${progresso}%`
-                      : "Fala da pessoa convertido para texto"
-                  }
-                  rows={6}
-                  className={`w-full bg-transparent p-4 outline-none resize-none text-sm ${placeholder}`}
-                />
-                {carregando && (
-                  <div className="absolute bottom-0 left-0 w-full h-1.5 bg-black/10">
-                    <div className="h-full bg-green-500 transition-all duration-300 ease-out" style={{ width: `${progresso}%` }} />
-                  </div>
-                )}
-                {resultado && !carregando && (
-                  <button
-                    onClick={() => falarTexto(resultado, idiomaDestino.codigo, "resultado")}
-                    className="absolute top-2 right-2"
-                    aria-label={falando === "resultado" ? "Parar leitura" : "Ouvir texto"}
-                  >
-                    <img
-                      src={darkMode ? "/Voice Recognition-dark.png" : "/Voice Recognition.png"}
-                      alt="ouvir"
-                      className={`w-8 h-8 cursor-pointer transition-transform ${
-                        falando === "resultado" ? "scale-110 animate-pulse" : ""
-                      }`}
-                    />
-                  </button>
-                )}
-              </div>
-            </div>
-            
-          </>
+        {!modoConversa && (
+          <div className="flex justify-center mt-4 px-4">
+            <CaixaResultadoTraducao
+              resultado={resultado}
+              carregando={carregando}
+              progresso={progresso}
+              placeholderPronto="Fala da pessoa convertido para texto"
+              sentimento={sentimento}
+              analisando={analisando}
+              darkMode={darkMode}
+              falando={falando === "resultado"}
+              onFalar={() => falar(resultado, idiomaDestino.codigo, "resultado")}
+              className={`flex flex-col justify-start w-full max-w-md h-56 ${darkMode ? "text-cyan-500" : ""}`}
+            />
+          </div>
         )}
 
         {/* Modo conversação */}
         {modoConversa && (
           <div className="flex flex-col items-center px-4 gap-3">
-
             {/* Indicador de turno */}
             <div className={`flex flex-col items-center gap-1.5 text-sm font-semibold px-4 py-2 rounded-full ${darkMode ? "bg-zinc-700" : "bg-gray-200"}`}>
               <span>
                 {contadorInicio !== null
-                    ? `A tradução vai começar em ${contadorInicio}s...`
-                    : gravando && progressoSilencio > 0
-                    ? `🤫 Pode parar de falar, já captei... (${progressoSilencio}%)`
-                    : gravando
-                    ? `🎙️ Pessoa ${turnoAtual} falando (${turnoAtual === 1 ? idiomaOrigem.nome : idiomaDestino.nome})`
-                    : carregando
-                    ? `Traduzindo...`
-                    : `Aguardando Pessoa ${turnoAtual}...`
-                }
+                  ? `A tradução vai começar em ${contadorInicio}s...`
+                  : gravando && progressoSilencio > 0
+                  ? `🤫 Pode parar de falar, já captei... (${progressoSilencio}%)`
+                  : gravando
+                  ? `🎙️ Pessoa ${turnoAtual} falando (${turnoAtual === 1 ? idiomaOrigem.nome : idiomaDestino.nome})`
+                  : carregando
+                  ? `Traduzindo...`
+                  : `Aguardando Pessoa ${turnoAtual}...`}
               </span>
 
               {gravando && progressoSilencio > 0 && (
@@ -738,32 +484,23 @@ if (silenceTimeoutRef.current) {
                   <span className={`text-xs mb-1 ${darkMode ? "text-zinc-400" : "text-gray-500"}`}>
                     Pessoa {msg.pessoa} — {msg.pessoa === 1 ? idiomaOrigem.nome : idiomaDestino.nome}
                   </span>
-                  <div className={`max-w-xs px-3 py-2 rounded-xl text-sm ${
-                    msg.pessoa === 1
-                      ? darkMode ? "bg-green-600 text-white" : "bg-blue-500 text-white"
-                      : darkMode ? "bg-zinc-600 text-white" : "bg-gray-200 text-gray-800"
-                  }`}>
+                  <div
+                    className={`max-w-xs px-3 py-2 rounded-xl text-sm ${
+                      msg.pessoa === 1
+                        ? darkMode
+                          ? "bg-green-600 text-white"
+                          : "bg-blue-500 text-white"
+                        : darkMode
+                        ? "bg-zinc-600 text-white"
+                        : "bg-gray-200 text-gray-800"
+                    }`}
+                  >
                     <p className="text-xs opacity-70 mb-1">{msg.texto}</p>
                     <p className="font-medium">{msg.traducao}</p>
                     {msg.sentimento && (
-                      <span
-                        className={`inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/90 ${
-                          msg.sentimento === "positivo"
-                            ? "text-green-700"
-                            : msg.sentimento === "negativo"
-                            ? "text-red-700"
-                            : "text-gray-700"
-                        }`}
-                        title={
-                          msg.sentimento === "positivo"
-                            ? "Sentimento positivo"
-                            : msg.sentimento === "negativo"
-                            ? "Sentimento negativo"
-                            : "Sentimento neutro"
-                        }
-                      >
-                        {msg.sentimento === "positivo" ? "😊 Positivo" : msg.sentimento === "negativo" ? "😡 Negativo" : "😐 Neutro"}
-                      </span>
+                      <div className="mt-1">
+                        <SentimentoBadge sentimento={msg.sentimento} variante="compacta" />
+                      </div>
                     )}
                   </div>
                 </div>
@@ -772,103 +509,69 @@ if (silenceTimeoutRef.current) {
           </div>
         )}
 
-                     {/* Toggle Modo Conversação */}
+        {/* Toggle Modo Conversação */}
         <div className="flex justify-center items-center gap-2 mt-4 text-sm">
-           <div className="relative">
-  <img
-    src={
-      darkMode
-        ? "/material-symbols_info-outline-dark.png"
-        : "/material-symbols_info-outline.png"
-    }
-    alt="Informação"
-    className="cursor-pointer w-5 h-5"
-    
-    // Desktop
-    onMouseEnter={() => setMostrarInfoConversa(true)}
-    onMouseLeave={() => setMostrarInfoConversa(false)}
+          <div className="relative">
+            <img
+              src={darkMode ? "/material-symbols_info-outline-dark.png" : "/material-symbols_info-outline.png"}
+              alt="Informação"
+              className="cursor-pointer w-5 h-5"
+              onMouseEnter={() => setMostrarInfoConversa(true)}
+              onMouseLeave={() => setMostrarInfoConversa(false)}
+              onClick={() => setMostrarInfoConversa((prev) => !prev)}
+            />
 
-    // Mobile
-    onClick={() =>
-      setMostrarInfoConversa((prev) => !prev)
-    }
-  />
+            {mostrarInfoConversa && (
+              <div
+                className={`absolute z-50 top-7 left-1/2 -translate-x-1/2 w-45 p-3 rounded-xl text-xs shadow-lg ${
+                  darkMode ? "bg-zinc-800 text-white border border-zinc-600" : "bg-white text-gray-800 border border-gray-300"
+                }`}
+              >
+                O modo conversação permite tradução de voz em tempo real entre duas pessoas.
+                <br />
+                <br />
+                A Pessoa 1 fala no idioma de origem e a fala é traduzida para o idioma de destino.
+                <br />
+                <br />
+                Depois, a Pessoa 2 fala no idioma de destino e a fala é traduzida para o idioma de origem
+                automaticamente.
+              </div>
+            )}
+          </div>
 
-  {mostrarInfoConversa && (
-    <div
-      className={`
-        absolute z-50 top-7 left-1/2 -translate-x-1/2
-        w-45 p-3 rounded-xl text-xs shadow-lg
-        ${darkMode
-          ? "bg-zinc-800 text-white border border-zinc-600"
-          : "bg-white text-gray-800 border border-gray-300"}
-      `}
-    >
-      O modo conversação permite tradução de voz em tempo real entre duas
-      pessoas.
-
-      <br /><br />
-
-      A Pessoa 1 fala no idioma de origem e a fala é traduzida para o idioma
-      de destino.
-
-      <br /><br />
-
-      Depois, a Pessoa 2 fala no idioma de destino e a fala é traduzida para o
-      idioma de origem automaticamente.
-    </div>
-  )}
-</div>
           <span className="font-bold">Modo Conversação</span>
           <button
             onClick={toggleModoConversa}
             disabled={carregando}
-            className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${modoConversa ? darkMode ? "bg-[#7C3AED]" : "bg-[#7C3AED]" : "bg-gray-400"}`}
+            className={`w-12 h-6 rounded-full relative transition-colors duration-300 ${modoConversa ? "bg-[#7C3AED]" : "bg-gray-400"}`}
           >
-            <div className={`w-5 h-5 rounded-full absolute top-0.5 transition-all duration-300 ${darkMode ? "bg-black" : "bg-white"} ${modoConversa ?  "left-6" : "left-0.5"}`} />
+            <div
+              className={`w-5 h-5 rounded-full absolute top-0.5 transition-all duration-300 ${darkMode ? "bg-black" : "bg-white"} ${
+                modoConversa ? "left-6" : "left-0.5"
+              }`}
+            />
           </button>
         </div>
 
-        {/* Botão de gravação */}
-        {!modoConversa && (  
-            <div className="flex flex-col items-center justify-center py-15 select-none">
-              <button
-                onClick={() => { if (gravando) pararGravacao(); else iniciarGravacao(); }}
-                disabled={carregando}
-                className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer select-none touch-none
-                  ${gravando ? "bg-red-500 scale-110 shadow-lg shadow-red-400" : carregando ? "opacity-50 cursor-not-allowed" : "bg-transparent"}`}
-              >
-                <img src={darkMode ? "/Component 1-dark.png" : "/Component 1.png"} alt="Microfone" className="w-10 h-10 pointer-events-none" />
-              </button>
-              <p className="text-sm mt-2">
-                {gravando ? "Gravando... aperte para parar" : carregando ? "Processando..." : "Aperte aqui para capturar o áudio"}
-              </p>
-            </div>
-          )}
+        {/* Botão de gravação (modo normal) */}
+        {!modoConversa && (
+          <div className="flex flex-col items-center justify-center py-15 select-none">
+            <button
+              onClick={() => (gravando ? pararGravacao() : iniciarGravacao())}
+              disabled={carregando}
+              className={`w-16 h-16 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer select-none touch-none
+                ${gravando ? "bg-red-500 scale-110 shadow-lg shadow-red-400" : carregando ? "opacity-50 cursor-not-allowed" : "bg-transparent"}`}
+            >
+              <img src={darkMode ? "/Component 1-dark.png" : "/Component 1.png"} alt="Microfone" className="w-10 h-10 pointer-events-none" />
+            </button>
+            <p className="text-sm mt-2">
+              {gravando ? "Gravando... aperte para parar" : carregando ? "Processando..." : "Aperte aqui para capturar o áudio"}
+            </p>
+          </div>
+        )}
 
-
-
-        {/* Navbar */}
-        <div className={`flex justify-center gap-6  pb-4 ${!modoConversa ? "-mt-10" : "mt-6"}`}>
-          <Link to="/textoTraducao">
-            <img src={darkMode ? "/Component 3-dark.png" : "/Component 3.png"} className="h-10" />
-          </Link>
-          <Link to="/imgTraducao">
-            <img src={darkMode ? "/Component 2-dark.png" : "/Component 2.png"} className="h-10" />
-          </Link>
-          <img src={darkMode ? "/Component 1-select-dark.png" : "/Component 1-select.png"} className="h-10" />
-          <Link to='/docTraducao'><img src={darkMode ? "/Component 19-dark.png" : "/Component 19.png"} className="h-10" /></Link>
-        </div>
+        <NavegacaoTraducao paginaAtual="voz" darkMode={darkMode} className={`gap-6 pb-4 ${!modoConversa ? "-mt-10" : "mt-6"}`} />
       </div>
-
-      {openModal && (
-        <ModalIdiomas
-          idiomas={idiomas}
-          tipoSelecao={tipoSelecao}
-          onSelecionar={handleSelecionar}
-          onFechar={() => setOpenModal(false)}
-        />
-      )}
     </div>
   );
 }

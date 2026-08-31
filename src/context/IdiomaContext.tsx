@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
 
-type Idioma = {
+export type Idioma = {
   nome: string;
   codigo: string;
 };

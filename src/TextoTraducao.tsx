@@ -1,326 +1,142 @@
-import { useState, useEffect, useRef  } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTheme } from "./context/ThemeContext";
-import { ModalIdiomas } from "./components/ModalIdiomas";
-import { Link } from "react-router-dom"
 import { useIdioma } from "./context/IdiomaContext";
 import { registrarIdioma } from "./utils/idiomaFavorito";
 import { apiFetch, SessaoExpiradaError } from "./utils/apiFetch";
 import { useProgressoSimulado } from "./hooks/useProgressoSimulado";
+import { useSentimento } from "./hooks/useSentimento";
+import { useFalarTexto } from "./hooks/useFalarTexto";
+import { SeletorIdiomasBar } from "./components/SeletorIdiomasBar";
+import { CaixaResultadoTraducao } from "./components/CaixaResultadoTraducao";
+import { BotaoOuvirTexto } from "./components/BotaoOuvirTexto";
+import { NavegacaoTraducao } from "./components/NavegacaoTraducao";
+
+type CampoVoz = "origem" | "destino";
+
+const ATRASO_TRADUCAO_MS = 900;
 
 export default function TextoTraducao() {
   const { darkMode } = useTheme();
   const { progresso, iniciar, concluir, cancelar } = useProgressoSimulado();
-  const [openModal, setOpenModal] = useState(false);
-  const [idiomas, setIdiomas] = useState<Record<string, string>>({});
-  const { idiomaOrigem, idiomaDestino, setIdiomaOrigem, setIdiomaDestino} = useIdioma();
-  const [tipoSelecao, setTipoSelecao] = useState<"origem" | "destino">("origem");
+  const { idiomaOrigem, idiomaDestino } = useIdioma();
+
   const [textoOrigem, setTextoOrigem] = useState("");
   const [textoTraduzido, setTextoTraduzido] = useState("");
   const [carregando, setCarregando] = useState(false);
-  const [falando, setFalando] = useState<"origem" | "destino" | null>(null);
-  const [sentimento, setSentimento] = useState<"positivo" | "negativo" | "neutro" | null>(null);
-  const [analisandoSentimento, setAnalisandoSentimento] = useState(false);
+
+  const { falando, falar } = useFalarTexto<CampoVoz>();
+  const { sentimento, analisando, analisar, limpar: limparSentimento } = useSentimento();
+
   const abortRef = useRef<AbortController | null>(null);
 
-    useEffect(() => {
-      fetch("/idiomas_pt.json")
-          .then(res => res.json())
-          .then(data => setIdiomas(data))
-          .catch(() => console.error("Erro ao carregar idiomas"));
-  }, []);
+  async function traduzir() {
+    if (!textoOrigem.trim()) return;
+    setCarregando(true);
+    iniciar();
+    limparSentimento();
 
-  async function abrirModal(tipo: "origem" | "destino") {
-    setTipoSelecao(tipo);
-    setOpenModal(true);
-  }
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
-function handleSelecionar(nome: string, codigo: string) {
-  const idioma = { nome, codigo };
+    try {
+      const res = await apiFetch("/traduzir", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
+        body: JSON.stringify({
+          texto: textoOrigem,
+          origem: idiomaOrigem.codigo,
+          destino: idiomaDestino.codigo,
+          modo: "texto",
+        }),
+      });
 
-  if (tipoSelecao === "origem") {
-    if(codigo === idiomaDestino.codigo) {
-      setIdiomaDestino(idiomaOrigem);
-    }
-    setIdiomaOrigem(idioma);
-  } else {
-    if(codigo === idiomaOrigem.codigo){
-      setIdiomaOrigem(idiomaDestino);
-    }
-    setIdiomaDestino(idioma);
-  }
-}
-  
- function falarTexto(texto: string, idioma: string, campo: "origem" | "destino") {
-  if (!texto) return;
+      const data = await res.json();
 
-  // Clicou de novo no mesmo botão enquanto fala: para a fala
-  if (falando === campo) {
-    speechSynthesis.cancel();
-    setFalando(null);
-    return;
-  }
+      if (!res.ok) {
+        setTextoTraduzido(`Erro: ${data.detail}`);
+        cancelar();
+        return;
+      }
 
-  const utterance = new SpeechSynthesisUtterance(texto);
-  utterance.lang = idioma;
-  utterance.volume = 1;    
-  utterance.rate = 1;      
-  utterance.pitch = 1;     
-
-  utterance.onstart = () => setFalando(campo);
-  utterance.onend = () => setFalando(null);
-  utterance.onerror = () => setFalando(null);
-
-  speechSynthesis.cancel();
-
-  const falar = () => {
-    const vozes = speechSynthesis.getVoices();
-    const vozIdioma = vozes.find(v => v.lang.startsWith(idioma));
-    if (vozIdioma) utterance.voice = vozIdioma;
-    speechSynthesis.speak(utterance);
-  };
-
-  if (speechSynthesis.getVoices().length > 0) {
-    falar();
-  } else {
-    speechSynthesis.addEventListener("voiceschanged", falar, { once: true });
-  }
-}
-
-async function analisarSentimento(texto: string) {
-  if (!texto.trim()) {
-    setSentimento(null);
-    return;
-  }
-
-  setAnalisandoSentimento(true);
-
-  try {
-    const res = await apiFetch("/analisar-sentimento", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ texto }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      setSentimento(null);
-      return;
-    }
-
-    if (data.sentimento === "positivo" || data.sentimento === "negativo" || data.sentimento === "neutro") {
-      setSentimento(data.sentimento);
-    } else {
-      setSentimento(null);
-    }
-  } catch (e) {
-    if (e instanceof SessaoExpiradaError) {
-      return;
-    }
-    setSentimento(null);
-  } finally {
-    setAnalisandoSentimento(false);
-  }
-}
-
-async function traduzir() {
-  if (!textoOrigem.trim()) return;
-  setCarregando(true);
-  iniciar();
-  setSentimento(null);
-
-  abortRef.current?.abort();
-  const controller = new AbortController();
-  abortRef.current = controller;
-
-  try {
-    const res = await apiFetch("/traduzir", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      signal: controller.signal,
-      body: JSON.stringify({
-        texto: textoOrigem,
-        origem: idiomaOrigem.codigo,
-        destino: idiomaDestino.codigo,
-        modo: "texto",
-      }),
-    });
-
-    const data = await res.json();
-
-    if (!res.ok) {
-      setTextoTraduzido(`Erro: ${data.detail}`);
+      setTextoTraduzido(data.traducao);
+      concluir();
+      registrarIdioma(idiomaOrigem.nome);
+      registrarIdioma(idiomaDestino.nome);
+      analisar(data.traducao);
+    } catch (e) {
+      if (e instanceof SessaoExpiradaError) {
+        // apiFetch já redireciona pro login; não precisa fazer nada aqui
+        cancelar();
+        return;
+      }
+      setTextoTraduzido("Erro ao traduzir. Tente novamente.");
       cancelar();
+    } finally {
+      setCarregando(false);
+    }
+  }
+
+  // Traduz automaticamente `ATRASO_TRADUCAO_MS` depois que o usuário para de digitar.
+  useEffect(() => {
+    if (!textoOrigem.trim()) {
+      setTextoTraduzido("");
+      limparSentimento();
       return;
     }
 
-    setTextoTraduzido(data.traducao);
-    concluir();
-    registrarIdioma(idiomaOrigem.nome);
-    registrarIdioma(idiomaDestino.nome);
-    analisarSentimento(data.traducao);
-  } catch (e) {
-    if (e instanceof SessaoExpiradaError) {
-      // apiFetch já redireciona pro login; não precisa fazer nada aqui
-      cancelar();
-      return;
-    }
-    setTextoTraduzido("Erro ao traduzir. Tente novamente.");
-    cancelar();
-  } finally {
-    setCarregando(false);
-  }
-}
+    const timer = setTimeout(traduzir, ATRASO_TRADUCAO_MS);
+    return () => clearTimeout(timer);
+  }, [textoOrigem]);
 
-useEffect(() => {
-  if (!textoOrigem.trim()) {
-    setTextoTraduzido("");
-    setSentimento(null);
-    return;
-  }
-
-  const delay = setTimeout(() => {
-    traduzir();
-  }, 900); 
-
-  return () => clearTimeout(delay);
-}, [textoOrigem]);
-
-  const placeholder = darkMode ? "placeholder:text-cyan-500" : "placeholder:text-gray-500";
+  const placeholderClasse = darkMode ? "placeholder:text-cyan-500" : "placeholder:text-gray-500";
 
   return (
     <div className={`flex flex-col min-h-screen px-4 ${darkMode ? "bg-[#0F172A]" : "bg-gray-50"}`}>
-     <div className="flex flex-col gap-4 mt-4">
-      {/* Seleção de idiomas */}
-      <div className="flex gap-3 justify-center mb-4">
-        <button
-          onClick={() => abrirModal("origem")}
-          className={`h-8 w-25 px-4 py-1 rounded-md text-sm border cursor-pointer border-black ${darkMode ? "bg-green-500 text-black" : "bg-blue-500 text-white"}`}
-        >
-          {idiomaOrigem.nome}
-        </button>
+      <div className="flex flex-col gap-4 mt-4">
+        <SeletorIdiomasBar larguraFixa />
 
-        <img src={darkMode ? "/typcn_arrow-up-outline-dark.png" : "/typcn_arrow-up-outline.png"} alt="seta" />
-
-        <button
-          onClick={() => abrirModal("destino")}
-          className={`h-8 w-25 px-4 py-1 rounded-md text-sm border cursor-pointer border-black ${darkMode ? "bg-green-500 text-black" : "bg-blue-500 text-white"}`}
-        >
-          {idiomaDestino.nome}
-        </button>
-      </div>
-
-      {/* Área de texto origem */}
-      <div className={`relative rounded-xl border ${darkMode ? "border-white" : "border-black"} mb-1`}>
-        <textarea
-          value={textoOrigem}
-          onChange={(e) => setTextoOrigem(e.target.value)}
-          placeholder={`Seu texto em ${idiomaOrigem.nome}`}
-          rows={6}
-          className={`w-full bg-transparent p-4 outline-none resize-none text-sm ${placeholder}`}
-        />
-
-        {/* Ícone de voz */}
-        {textoOrigem && (
-         <button
-           onClick={() => falarTexto(textoOrigem, idiomaOrigem.codigo, "origem")}
-           className="absolute top-2 right-2"
-           aria-label={falando === "origem" ? "Parar leitura" : "Ouvir texto"}
-           >
-          <img
-           src={darkMode ? "/Voice Recognition-dark.png" : "/Voice Recognition.png"}
-           alt="ouvir"
-           className={`w-8 h-8 cursor-pointer transition-transform ${
-             falando === "origem" ? "scale-110 animate-pulse" : ""
-           }`}
+        {/* Área de texto origem */}
+        <div className={`relative rounded-xl border ${darkMode ? "border-white" : "border-black"} mb-1`}>
+          <textarea
+            value={textoOrigem}
+            onChange={(e) => setTextoOrigem(e.target.value)}
+            placeholder={`Seu texto em ${idiomaOrigem.nome}`}
+            rows={6}
+            className={`w-full bg-transparent p-4 outline-none resize-none text-sm ${placeholderClasse}`}
           />
-         </button>
-        )}
-      </div>
 
-      {/* Divisor */}
-       <div className="w-full flex items-center gap-2 mb-6">
-        <div className="flex-1 h-px bg-gray-400" />
-        <img src={darkMode ? "/fluent_translate-auto-24-filled-dark.png" : "/fluent_translate-auto-24-filled.png"} />
-        <div className="flex-1 h-px bg-gray-400" />
-      </div>
+          {textoOrigem && (
+            <BotaoOuvirTexto
+              ativo={falando === "origem"}
+              darkMode={darkMode}
+              onClick={() => falar(textoOrigem, idiomaOrigem.codigo, "origem")}
+            />
+          )}
+        </div>
 
-      {/* Área de texto traduzido */}
-      <div className={`relative rounded-xl border  ${darkMode ? "bg-zinc-700 border-white" : "bg-zinc-200 border-black"} mb-6`}>
-        {!carregando && !analisandoSentimento && sentimento && (
-          <div className="flex justify-start px-4 pt-3">
-            <span
-              className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                sentimento === "positivo"
-                  ? "bg-green-500/20 text-green-600"
-                  : sentimento === "negativo"
-                  ? "bg-red-500/20 text-red-600"
-                  : "bg-gray-500/20 text-gray-600"
-              }`}
-              title={
-                sentimento === "positivo"
-                  ? "Sentimento positivo"
-                  : sentimento === "negativo"
-                  ? "Sentimento negativo"
-                  : "Sentimento neutro"
-              }
-            >
-              {sentimento === "positivo" ? "😊 Positivo" : sentimento === "negativo" ? "😡 Negativo" : "😐 Neutro"}
-            </span>
-          </div>
-        )}
+        {/* Divisor */}
+        <div className="w-full flex items-center gap-2 mb-6">
+          <div className="flex-1 h-px bg-gray-400" />
+          <img src={darkMode ? "/fluent_translate-auto-24-filled-dark.png" : "/fluent_translate-auto-24-filled.png"} alt="" />
+          <div className="flex-1 h-px bg-gray-400" />
+        </div>
 
-        <textarea
-          value={carregando ? "" : textoTraduzido}
-          readOnly
-          placeholder={
-             carregando
-              ? `Traduzindo... ${progresso}%`
-              : `Seu texto em ${idiomaDestino.nome}`
-              }
-          rows={6}
-          className={`w-full bg-transparent p-4 outline-none resize-none text-sm ${placeholder}`}
+        <CaixaResultadoTraducao
+          resultado={textoTraduzido}
+          carregando={carregando}
+          progresso={progresso}
+          placeholderPronto={`Seu texto em ${idiomaDestino.nome}`}
+          sentimento={sentimento}
+          analisando={analisando}
+          darkMode={darkMode}
+          falando={falando === "destino"}
+          onFalar={() => falar(textoTraduzido, idiomaDestino.codigo, "destino")}
         />
 
-        {carregando && (
-          <div className="absolute bottom-0 left-0 w-full h-1.5 bg-black/10">
-           <div className="h-full bg-green-500 transition-all duration-300 ease-out" style={{ width: `${progresso}%` }} />
-          </div>   
-        )}
-
-        {!carregando && textoTraduzido && (
-          <button
-           onClick={() => falarTexto(textoTraduzido, idiomaDestino.codigo, "destino")}
-           className="absolute top-2 right-2"
-           aria-label={falando === "destino" ? "Parar leitura" : "Ouvir texto"}
-            >
-          <img
-           src={darkMode ? "/Voice Recognition-dark.png" : "/Voice Recognition.png"}
-           alt="ouvir"
-           className={`w-8 h-8 cursor-pointer transition-transform ${
-             falando === "destino" ? "scale-110 animate-pulse" : ""
-           }`}
-          />
-         </button>
-        )}
+        <NavegacaoTraducao paginaAtual="texto" darkMode={darkMode} />
       </div>
-
-      {/* Ícones de navegação */}
-      <div className="flex justify-center gap-6 mt-auto">
-        <img src={darkMode ? "/Component 3-select-dark.png" : "/Component 3-select.png"} className="h-10" />
-        <Link to='/imgTraducao'><img src={darkMode ? "/Component 2-dark.png" : "/Component 2.png"} className="h-10" /></Link>
-        <Link to='/vozTraducao'><img src={darkMode ? "/Component 1-dark.png" : "/Component 1.png"} className="h-10" /></Link>
-        <Link to='/docTraducao'><img src={darkMode ? "/Component 19-dark.png" : "/Component 19.png"} className="h-10" /></Link>
-      </div>
-      </div>
-      {openModal && (
-        <ModalIdiomas
-          idiomas={idiomas}
-          tipoSelecao={tipoSelecao}
-          onSelecionar={handleSelecionar}
-          onFechar={() => setOpenModal(false)}
-        />
-      )}
     </div>
   );
 }

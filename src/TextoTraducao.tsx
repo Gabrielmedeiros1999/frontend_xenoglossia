@@ -10,6 +10,7 @@ import { SeletorIdiomasBar } from "./components/SeletorIdiomasBar";
 import { CaixaResultadoTraducao } from "./components/CaixaResultadoTraducao";
 import { BotaoOuvirTexto } from "./components/BotaoOuvirTexto";
 import { NavegacaoTraducao } from "./components/NavegacaoTraducao";
+import { BotaoLimparTexto } from "./components/Botaolimpartexto";
 
 type CampoVoz = "origem" | "destino";
 
@@ -108,11 +109,17 @@ export default function TextoTraducao() {
           />
 
           {textoOrigem && (
+            <>
+             <BotaoLimparTexto
+              darkMode={darkMode}
+              onClick={() => setTextoOrigem("")}
+             />
             <BotaoOuvirTexto
               ativo={falando === "origem"}
               darkMode={darkMode}
               onClick={() => falar(textoOrigem, idiomaOrigem.codigo, "origem")}
             />
+            </>
           )}
         </div>
 

@@ -96,7 +96,7 @@ export default function TextoTraducao() {
   return (
     <div className={`flex flex-col min-h-screen px-4 ${darkMode ? "bg-[#0F172A]" : "bg-gray-50"}`}>
       <div className="flex flex-col gap-4 mt-4">
-        <SeletorIdiomasBar larguraFixa />
+        <SeletorIdiomasBar larguraFixa disabled={carregando} />
 
         {/* Área de texto origem */}
         <div className={`relative rounded-xl border ${darkMode ? "border-white" : "border-black"} mb-1`}>

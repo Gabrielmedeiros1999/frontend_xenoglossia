@@ -422,7 +422,7 @@ export default function VozTraducao() {
   return (
     <div className={`flex flex-col min-h-screen ${darkMode ? "bg-[#0F172A] text-white" : "bg-gray-50 text-gray-800"}`}>
       <div className="flex flex-col gap-0 mt-1">
-        <SeletorIdiomasBar className="mt-4 mb-4" />
+        <SeletorIdiomasBar className="mt-4 mb-4" disabled={gravando || modoConversa || carregando} />
 
         {/* Modo normal */}
         {!modoConversa && (

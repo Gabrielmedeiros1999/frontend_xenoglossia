@@ -154,7 +154,7 @@ export default function ImgTraducao() {
   return (
     <div className={`flex flex-col min-h-screen px-4 ${darkMode ? "bg-[#0F172A]" : "bg-gray-50"}`}>
       <div className="flex flex-col gap-4 mt-4">
-        <SeletorIdiomasBar larguraFixa />
+        <SeletorIdiomasBar larguraFixa disabled={carregando}  />
 
         {/* Área de upload */}
         <div className="flex flex-col items-center gap-3 rounded-xl px-4 py-5">

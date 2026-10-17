@@ -382,14 +382,14 @@ export default function DocTraducao() {
               disabled={baixando}
               className={`h-8 px-4 rounded-md text-sm border cursor-pointer border-black disabled:opacity-50 ${darkMode ? "bg-green-500 text-black" : "bg-blue-500 text-white"}`}
             >
-              {baixando ? "Gerando..." : "Baixar PDF traduzido"}
+              {baixando ? "Gerando..." : "Baixar PDF"}
             </button>
             <button
               onClick={() => baixarDocumentoTraduzido("docx")}
               disabled={baixando}
               className={`h-8 px-4 rounded-md text-sm border cursor-pointer border-black disabled:opacity-50 ${darkMode ? "bg-green-500 text-black" : "bg-blue-500 text-white"}`}
             >
-              {baixando ? "Gerando..." : "Baixar DOCX traduzido"}
+              {baixando ? "Gerando..." : "Baixar DOCX"}
             </button>
           </div>
         )}
